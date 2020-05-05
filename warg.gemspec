@@ -18,6 +18,8 @@ Gem::Specification.new do |s|
   s.bindir = "bin"
   s.executables = ["hodor"]
 
+  s.add_dependency "net-ssh"
+
   s.add_development_dependency "m"
   s.add_development_dependency "byebug"
   s.add_development_dependency "pry"

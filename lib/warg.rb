@@ -2,6 +2,8 @@ require "optparse"
 require "pathname"
 require "digest/sha1"
 
+require "net/ssh"
+
 module Warg
   class Host
     module Parser
@@ -103,6 +105,50 @@ module Warg
       value
     end
 
+    def run_command(command, &callback)
+      command_output = CommandOutput.new(self, command)
+
+      connection.open_channel do |channel|
+        channel.exec(command) do |_, success|
+          command_output.command_started!
+
+          channel.on_data do |_, data|
+            command_output.stdout << data
+          end
+
+          channel.on_extended_data do |_, __, data|
+            command_output.stderr << data
+          end
+
+          channel.on_request("exit-status") do |_, data|
+            command_output.exit_status = data.read_long
+          end
+
+          channel.on_request("exit-signal") do |_, data|
+            command_output.exit_signal = data.read_string
+          end
+
+          channel.on_open_failed do |_, code, reason|
+            command_output.connection_failed(code, reason)
+          end
+
+          channel.on_close do |_|
+            command_output.command_finished!
+          end
+        end
+
+        channel.wait
+      end
+
+      connection.loop
+
+      if callback
+        callback.call(command_output)
+      end
+
+      command_output
+    end
+
     def inspect
       %{#<#{self.class.name} uri=#{@uri.to_s}>}
     end
@@ -112,6 +158,20 @@ module Warg
     end
 
     private
+
+    def connection
+      if defined?(@connection)
+        @connection
+      else
+        options = { non_interactive: true }
+
+        if port
+          options[:port] = port
+        end
+
+        @connection = Net::SSH.start(address, user || Warg.default_user, options)
+      end
+    end
 
     def build_uri!
       @uri = URI.parse("ssh://")
@@ -125,6 +185,93 @@ module Warg
       end
 
       @id = Digest::SHA1.hexdigest(@uri.to_s)
+    end
+
+    class CommandOutput
+      attr_reader :command
+      attr_reader :exit_signal
+      attr_reader :exit_status
+      attr_reader :failure_code
+      attr_reader :failure_reason
+      attr_reader :finished_at
+      attr_reader :host
+      attr_reader :started_at
+      attr_reader :stderr
+      attr_reader :stdout
+
+      def initialize(host, command)
+        @host = host
+        @command = command
+
+        @stdout = ""
+        @stderr = ""
+
+        @started_at = nil
+        @finished_at = nil
+      end
+
+      # TODO: Figure out if this warnings should be errors or removed
+
+      def successful?
+        exit_status && exit_status.zero?
+      end
+
+      def failed?
+        !successful?
+      end
+
+      def finished?
+        !@finished_at.nil?
+      end
+
+      def exit_status=(value)
+        if finished?
+          $stderr.puts "[WARN] cannot change `#exit_status` after command has finished"
+        else
+          @exit_status = value
+        end
+      end
+
+      def exit_signal=(value)
+        if finished?
+          $stderr.puts "[WARN] cannot change `#exit_signal` after command has finished"
+        else
+          @exit_signal = value
+          @exit_signal.freeze
+        end
+      end
+
+      def duration
+        if @finished_at && @started_at
+          @finished_at - @started_at
+        end
+      end
+
+      def command_started!
+        if @started_at
+          $stderr.puts "[WARN] command already started"
+        else
+          @started_at = Time.now
+          @started_at.freeze
+        end
+      end
+
+      def command_finished!
+        if finished?
+          $stderr.puts "[WARN] command already finished"
+        else
+          @stdout.freeze
+          @stderr.freeze
+
+          @finished_at = Time.now
+          @finished_at.freeze
+        end
+      end
+
+      def connection_failed(code, reason)
+        @failure_code = code.freeze
+        @failure_reason = reason.freeze
+      end
     end
   end
 

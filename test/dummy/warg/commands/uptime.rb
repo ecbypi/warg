@@ -1,5 +1,8 @@
 class Uptime < Warg::Command
   def run
-    $stdout.puts `uptime`
+    @context.hosts.each do |host|
+      output = host.run_command("uptime")
+      $stdout.puts output.stdout
+    end
   end
 end

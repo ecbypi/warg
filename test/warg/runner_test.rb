@@ -5,7 +5,7 @@ class WargRunnerTest < Minitest::Test
     dummy_warg_directory = File.expand_path(File.join("..", "dummy", "warg"), __dir__)
     Dir.chdir dummy_warg_directory
 
-    runner = Warg::Runner.new %w( uptime -h localhost )
+    runner = Warg::Runner.new %w( uptime -h vagrant@warg-testing )
     stdout, _ = capture_io do
       runner.run
     end
@@ -21,7 +21,7 @@ class WargRunnerTest < Minitest::Test
     # see `Uptime` command in `spec/dummy/warg/commands`
     assert defined?(Uptime)
 
-    assert_match(/\d+:\d+(?::\d+)?\s+up/, stdout)
+    assert_match(/\d+:\d+:\d+\s+up/, stdout)
   end
 
   def test_raises_when_command_isnt_found
