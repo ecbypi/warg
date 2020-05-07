@@ -3,6 +3,7 @@ require "pathname"
 require "digest/sha1"
 
 require "net/ssh"
+require "net/scp"
 require "concurrent/promise"
 
 module Warg
@@ -148,6 +149,31 @@ module Warg
       end
 
       command_output
+    end
+
+    def run_script(script, &callback)
+      mkdir_output = run_command "mkdir -p #{script.install_directory}"
+
+      if mkdir_output.failed?
+        raise "Could not create directory on #{script.install_directory} on #{self}"
+      end
+
+      local_copy_filename = script.name.gsub(/[\/:]/, "-")
+      local_copy = Tempfile.new(local_copy_filename)
+      local_copy.chmod(0755)
+      local_copy.write(script.content)
+      local_copy.rewind
+
+      upload local_copy, to: script.install_path
+
+      local_copy.close
+      local_copy.unlink
+
+      run_command(script.remote_path, &callback)
+    end
+
+    def upload(file, to:)
+      connection.scp.upload!(file, to)
     end
 
     def inspect
@@ -356,13 +382,131 @@ module Warg
   class Config
     attr_accessor :default_user
     attr_reader :hosts
+    attr_reader :variables_sets
 
     def initialize
       @hosts = HostCollection.new
+      @variables_sets = Set.new
     end
 
     def hosts=(value)
       @hosts = HostCollection.from(value)
+    end
+
+    def variables_set_defined?(name)
+      @variables_sets.include?(name.to_s)
+    end
+
+    def [](name)
+      if variables_set_defined?(name.to_s)
+        instance_variable_get("@#{name}")
+      end
+    end
+
+    def variables(name, &block)
+      variables_name = name.to_s
+      ivar_name = "@#{variables_name}"
+
+      if @variables_sets.include?(variables_name)
+        variables_object = instance_variable_get(ivar_name)
+      else
+        @variables_sets << variables_name
+
+        singleton_class.attr_reader(variables_name)
+        variables_object = instance_variable_set(ivar_name, VariableSet.new(variables_name, self))
+      end
+
+      block.call(variables_object)
+    end
+
+    class VariableSet
+      def initialize(name, context)
+        @_name = name
+        @context = context
+        # FIXME: make this "private" by adding an underscore
+        @properties = Set.new
+      end
+
+      def define!(property_name)
+        @properties << property_name
+      end
+
+      def copy(other)
+        other.properties.each do |property_name|
+          value = other.instance_variable_get("@#{property_name}")
+
+          extend Property.new(property_name, value)
+        end
+      end
+
+      def to_h
+        @properties.each_with_object({}) do |property_name, variables|
+          variables["#{@_name}_#{property_name}"] = send(property_name)
+        end
+      end
+
+      protected
+
+      attr_reader :properties
+
+      def method_missing(name, *args, &block)
+        writer_name = name.to_s
+        reader_name = writer_name.chomp("=")
+
+        if reader_name !~ Property::REGEXP
+          super
+        elsif reader_name == writer_name && block.nil?
+          $stderr.puts "`#{@_name}.#{reader_name}' was accessed before it was defined"
+          nil
+        elsif writer_name.end_with?("=") or not block.nil?
+          value = block || args
+
+          extend Property.new(reader_name, *value)
+        else
+          super
+        end
+      end
+
+      private
+
+      attr_reader :context
+
+      def context=(*)
+        raise NoMethodError
+      end
+
+      class Property < Module
+        REGEXP = /[A-Za-z_]+/
+
+        def initialize(name, initial_value = nil)
+          @name = name
+          @initial_value = initial_value
+        end
+
+        def extended(variables_set)
+          variables_set.define! @name
+
+          variables_set.singleton_class.class_eval <<-PROPERTY_METHODS
+            attr_writer :#{@name}
+
+            def #{@name}(&block)
+              if block.nil?
+                value = instance_variable_get(:@#{@name})
+
+                if value.respond_to?(:call)
+                  instance_eval(&value)
+                else
+                  value
+                end
+              else
+                instance_variable_set(:@#{@name}, block)
+              end
+            end
+          PROPERTY_METHODS
+
+          variables_set.instance_variable_set("@#{@name}", @initial_value)
+        end
+      end
     end
   end
 
@@ -378,6 +522,12 @@ module Warg
     def copy(config)
       config.hosts.each do |host|
         hosts.add(host)
+      end
+
+      config.variables_sets.each do |variables_name|
+        variables(variables_name) do |variables_object|
+          variables_object.copy config.instance_variable_get("@#{variables_name}")
+        end
       end
     end
   end
@@ -395,6 +545,7 @@ module Warg
 
       parse_options!
       load_commands!
+      load_scripts!
 
       @command = Command.find(@argv)
     end
@@ -463,6 +614,51 @@ module Warg
       Warg.search_paths.each do |warg_path|
         Dir.glob(warg_path.join("commands", "**", "*.rb")).each do |command_path|
           load command_path
+        end
+      end
+    end
+
+    def load_scripts!
+      Warg.search_paths.each do |warg_path|
+        warg_scripts_path = warg_path.join("scripts")
+
+        Dir.glob(warg_scripts_path.join("**", "*")).each do |path|
+          script_path = Pathname.new(path)
+
+          if script_path.directory? || script_path.basename.to_s.index("_defaults") == 0
+            next
+          end
+
+          relative_script_path = script_path.relative_path_from(warg_scripts_path)
+
+          command_name = Command::Name.from_relative_script_path(relative_script_path)
+
+          object_names = command_name.object.split("::")
+          object_names.inject(Object) do |namespace, object_name|
+            if namespace.const_defined?(object_name)
+              object = namespace.const_get(object_name)
+            else
+              if object_name == object_names[-1]
+                object = Class.new do
+                  include Command::Behavior
+
+                  def run
+                    run_script
+                  end
+                end
+              else
+                object = Module.new
+              end
+
+              namespace.const_set(object_name, object)
+
+              if object < Command::Behavior
+                Warg::Command.register(object)
+              end
+            end
+
+            object
+          end
         end
       end
     end
@@ -548,18 +744,6 @@ module Warg
       register(klass)
     end
 
-    def self.command_name
-      if defined?(@command_name)
-        @command_name
-      else
-        @command_name = Name.new(name)
-      end
-    end
-
-    def self.registry_name
-      command_name.registry
-    end
-
     def self.find(argv)
       klass = nil
 
@@ -572,24 +756,36 @@ module Warg
       klass
     end
 
-    def self.call(context)
-      command = new(context)
-      command.run
-      command
-    end
-
     class Name
+      def self.from_relative_script_path(path)
+        script_name = path.to_s.chomp File.extname(path)
+
+        new(script_name: script_name.tr("_", "-"))
+      end
+
+      attr_reader :cli
       attr_reader :object
       attr_reader :script
-      attr_reader :cli
 
-      def initialize(class_name)
-        @object = class_name
+      def initialize(class_name: nil, script_name: nil)
+        if class_name.nil? && script_name.nil?
+          raise ArgumentError, "`script_name' or `class_name' must be specified"
+        end
 
-        @script = class_name.gsub("::", "/")
-        @script.gsub!(/([A-Z\d]+)([A-Z][a-z])/, '\1-\2')
-        @script.gsub!(/([a-z\d])([A-Z])/, '\1-\2')
-        @script.downcase!
+        if class_name
+          @object = class_name
+
+          @script = class_name.gsub("::", "/")
+          @script.gsub!(/([A-Z\d]+)([A-Z][a-z])/, '\1-\2')
+          @script.gsub!(/([a-z\d])([A-Z])/, '\1-\2')
+          @script.downcase!
+        elsif script_name
+          @script = script_name
+
+          @object = script_name.gsub(/[a-z\d]*/) { |match| match.capitalize }
+          @object.gsub!(/(?:_|-|(\/))([a-z\d]*)/i) { "#{$1}#{$2.capitalize}" }
+          @object.gsub!("/", "::")
+        end
 
         @cli = @script.tr("/", ":")
       end
@@ -603,41 +799,225 @@ module Warg
       end
     end
 
-    def initialize(context)
-      @context = context
-      @argv = @context.argv.dup
-      @parser = OptionParser.new
+    module Naming
+      def self.extended(klass)
+        Warg::Command.register(klass)
+      end
 
-      configure_parser!
-    end
+      def command_name
+        if defined?(@command_name)
+          @command_name
+        else
+          @command_name = Name.new(class_name: name)
+        end
+      end
 
-    def name
-      command_name.cli
-    end
-
-    def run
-      $stderr.puts "[WARN] `#{name}' did not define `#run' and does nothing"
-    end
-
-    def command_name
-      self.class.command_name
-    end
-
-    private
-
-    def configure_parser!
-    end
-
-    def run_command(command, order: :parallel, &callback)
-      on_hosts order: order do |host|
-        host.run_command(command, &callback)
+      def registry_name
+        command_name.registry
       end
     end
 
-    def on_hosts(order: :parallel, &block)
-      strategy = Executor.for(order)
-      executor = strategy.new(@context.hosts)
-      executor.run(&block)
+    module Behavior
+      def self.included(klass)
+        klass.extend(ClassMethods)
+      end
+
+      module ClassMethods
+        include Naming
+
+        def call(context)
+          command = new(context)
+          command.run
+          command
+        end
+      end
+
+      def initialize(context)
+        @context = context
+        @argv = @context.argv.dup
+        @parser = OptionParser.new
+
+        configure_parser!
+      end
+
+      def name
+        command_name.cli
+      end
+
+      def run
+        $stderr.puts "[WARN] `#{name}' did not define `#run' and does nothing"
+      end
+
+      def command_name
+        self.class.command_name
+      end
+
+      private
+
+      def configure_parser!
+      end
+
+      def run_script(script_name = nil, order: :parallel, &callback)
+        script_name ||= command_name.script
+
+        script = Script.new(script_name, @context)
+
+        on_hosts order: order do |host|
+          host.run_script(script, &callback)
+        end
+      end
+
+      def run_command(command, order: :parallel, &callback)
+        on_hosts order: order do |host|
+          host.run_command(command, &callback)
+        end
+      end
+
+      def on_hosts(order: :parallel, &block)
+        strategy = Executor.for(order)
+        executor = strategy.new(@context.hosts)
+        executor.run(&block)
+      end
+    end
+
+    include Behavior
+  end
+
+  class Script
+    class Template
+      INTERPOLATION_REGEXP = /%{([\w:]+)}/
+
+      def self.find(relative_script_path, fail_if_missing: true)
+        extension = File.extname(relative_script_path)
+        relative_paths = [relative_script_path]
+
+        if extension.empty?
+          relative_paths << "#{relative_script_path}.sh"
+        else
+          relative_paths << relative_script_path.chomp(extension)
+        end
+
+        paths_checked = []
+
+        script_path = Warg.search_paths.inject(nil) do |path, directory|
+          relative_paths.each do |relative_path|
+            target_path = directory.join("scripts", relative_path)
+            paths_checked << target_path
+
+            if target_path.exist?
+              path = target_path
+            end
+          end
+
+          if path
+            break path
+          end
+        end
+
+        if script_path
+          new(script_path)
+        elsif fail_if_missing
+          raise <<~ERROR
+            ScriptNotFoundError: Could not find `#{relative_script_path}'
+              Looked in:
+                #{paths_checked.join("\n")}
+          ERROR
+        else
+          MISSING
+        end
+      end
+
+      class Missing
+        def compile(*)
+          "".freeze
+        end
+      end
+
+      MISSING = Missing.new
+
+      attr_reader :content
+
+      def initialize(file_path)
+        @path = file_path
+        @content = @path.read
+      end
+
+      def compile(interpolations)
+        @content.gsub(INTERPOLATION_REGEXP) do |match|
+          if interpolations.key?($1)
+            interpolations[$1]
+          else
+            Console.warn "[WARN] `#{$1}' is not defined"
+            match
+          end
+        end
+      end
+    end
+
+    REMOTE_DIRECTORY = Pathname.new("$HOME").join("warg", "scripts")
+
+    class Interpolations
+      CONTEXT_REGEXP = /variables:(\w+)/
+
+      def initialize(context)
+        @context = context
+        @values = {}
+      end
+
+      def key?(key)
+        if key =~ CONTEXT_REGEXP
+          @context.variables_set_defined?($1)
+        else
+          @values.key?(key)
+        end
+      end
+
+      def [](key)
+        if @values.key?(key)
+          @values[key]
+        elsif key =~ CONTEXT_REGEXP && @context.variables_set_defined?($1)
+          variables = @context[$1]
+          content = variables.to_h.sort.map { |key, value| %{#{key}="#{value}"} }.join("\n")
+
+          @values[key] = content
+        end
+      end
+
+      def []=(key, value)
+        @values[key] = value
+      end
+    end
+
+    attr_reader :content
+    attr_reader :name
+    attr_reader :remote_path
+
+    def initialize(script_name, context, defaults_path: nil)
+      command_name = Command::Name.from_relative_script_path(script_name)
+      @name = command_name.script
+
+      local_path = Pathname.new(@name)
+
+      # FIXME: search parent directories for a defaults script
+      defaults_path ||= File.join(local_path.dirname, "_defaults")
+      defaults = Template.find(defaults_path, fail_if_missing: false)
+
+      interpolations = Interpolations.new(context)
+      interpolations["script_name"] = @name
+      interpolations["script_defaults"] = defaults.compile(interpolations).chomp
+
+      template = Template.find(local_path.to_s)
+      @content = template.compile(interpolations)
+
+      @remote_path = REMOTE_DIRECTORY.join(local_path)
+    end
+
+    def install_directory
+      @remote_path.dirname
+    end
+
+    def install_path
+      @remote_path.relative_path_from("$HOME")
     end
   end
 

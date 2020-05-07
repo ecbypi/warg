@@ -20,6 +20,7 @@ Gem::Specification.new do |s|
 
   s.add_dependency "concurrent-ruby"
   s.add_dependency "net-ssh"
+  s.add_dependency "net-scp"
 
   s.add_development_dependency "m"
   s.add_development_dependency "byebug"
