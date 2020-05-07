@@ -3,6 +3,7 @@ require "pathname"
 require "digest/sha1"
 
 require "net/ssh"
+require "concurrent/promise"
 
 module Warg
   class Host
@@ -467,6 +468,65 @@ module Warg
     end
   end
 
+  class Executor
+    class << self
+      attr_reader :strategies
+    end
+
+    @strategies = {}
+
+    def self.for(name)
+      @strategies.fetch(name)
+    end
+
+    def self.register(name, &block)
+      strategy = Class.new(self)
+      strategy.define_method(:setup_promises, &block)
+
+      @strategies[name] = strategy
+    end
+
+    attr_reader :hosts
+
+    def initialize(hosts)
+      @hosts = hosts
+    end
+
+    # FIXME: error handling?
+    def run(&block)
+      promise = setup_promises(&block)
+      promise.execute
+
+      if promise.value.nil? && promise.rejected?
+        raise promise.reason
+      end
+
+      promise.value
+    end
+
+    def setup_promises(&block)
+      raise NotImplementedError
+    end
+
+    register :parallel do |&procedure|
+      host_promises = hosts.map do |host|
+        Concurrent::Promise.execute do
+          procedure.call(host)
+        end
+      end
+
+      Concurrent::Promise.zip(*host_promises)
+    end
+
+    register :serial do |&procedure|
+      hosts.inject(Concurrent::Promise.fulfill([])) do |promise, host|
+        promise.then do |value|
+          value << procedure.call(host)
+        end
+      end
+    end
+  end
+
   class Command
     class << self
       attr_reader :registry
@@ -566,6 +626,18 @@ module Warg
     private
 
     def configure_parser!
+    end
+
+    def run_command(command, order: :parallel, &callback)
+      on_hosts order: order do |host|
+        host.run_command(command, &callback)
+      end
+    end
+
+    def on_hosts(order: :parallel, &block)
+      strategy = Executor.for(order)
+      executor = strategy.new(@context.hosts)
+      executor.run(&block)
     end
   end
 

@@ -1,7 +1,6 @@
 class Uptime < Warg::Command
   def run
-    @context.hosts.each do |host|
-      output = host.run_command("uptime")
+    run_command "uptime", order: :parallel do |output|
       $stdout.puts output.stdout
     end
   end
