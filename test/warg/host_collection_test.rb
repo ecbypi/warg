@@ -117,6 +117,56 @@ class WargHostCollectionTest < Minitest::Test
     ]
   end
 
+  def test_uploading_files
+    hosts = Warg::HostCollection.from("warg-testing")
+
+    tempfile = Tempfile.new
+    tempfile.write("here-we-are")
+    tempfile.rewind
+
+    hosts.upload(tempfile, to: "see-us")
+
+    cat_outputs = hosts.map do |host|
+      host.run_command("cat see-us")
+    end
+
+    assert_equal [0], cat_outputs.map(&:exit_status)
+    assert_equal %w( here-we-are ), cat_outputs.map(&:stdout)
+
+    rm_outputs = hosts.map do |host|
+      host.run_command("rm see-us")
+    end
+
+    assert_equal [0], rm_outputs.map(&:exit_status)
+    assert_equal [""], rm_outputs.map(&:stderr)
+  ensure
+    tempfile.unlink
+  end
+
+  def test_creating_files_from_string_content
+    hosts = Warg::HostCollection.from("warg-testing")
+
+    hosts.create_file_from <<~SCRIPT, path: "see-us.sh", mode: 0755
+      #!/usr/bin/env bash
+
+      printf "here-we-are"
+    SCRIPT
+
+    script_outputs = hosts.map do |host|
+      host.run_command("./see-us.sh")
+    end
+
+    assert_equal [0], script_outputs.map(&:exit_status)
+    assert_equal %w( here-we-are ), script_outputs.map(&:stdout)
+
+    rm_outputs = hosts.map do |host|
+      host.run_command("rm see-us.sh")
+    end
+
+    assert_equal [0], rm_outputs.map(&:exit_status)
+    assert_equal [""], rm_outputs.map(&:stderr)
+  end
+
   def uris_from(collection)
     collection.map(&:to_s)
   end

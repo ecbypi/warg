@@ -158,18 +158,22 @@ module Warg
         raise "Could not create directory on #{script.install_directory} on #{self}"
       end
 
-      local_copy_filename = script.name.gsub(/[\/:]/, "-")
-      local_copy = Tempfile.new(local_copy_filename)
-      local_copy.chmod(0755)
-      local_copy.write(script.content)
-      local_copy.rewind
-
-      upload local_copy, to: script.install_path
-
-      local_copy.close
-      local_copy.unlink
+      create_file_from script.content, path: script.install_path, mode: 0755
 
       run_command(script.remote_path, &callback)
+    end
+
+    def create_file_from(content, path:, mode: 0644)
+      filename = "#{id}-#{File.basename(path)}"
+
+      tempfile = Tempfile.new(filename)
+      tempfile.chmod(mode)
+      tempfile.write(content)
+      tempfile.rewind
+
+      upload tempfile, to: path
+
+      tempfile.unlink
     end
 
     def upload(file, to:)
@@ -362,6 +366,18 @@ module Warg
 
     def length
       @hosts.length
+    end
+
+    def create_file_from(content, path:, mode: 0644)
+      each do |host|
+        host.create_file_from(content, path: path, mode: mode)
+      end
+    end
+
+    def upload(file, to:)
+      each do |host|
+        host.upload(file, to: to)
+      end
     end
 
     def each

@@ -44,4 +44,46 @@ class WargHostTest < Minitest::Test
 
     assert_equal "ssh://localhost?environment=hippa", host.to_s
   end
+
+  def test_uploading_files
+    host = Warg::Host.new(address: "warg-testing")
+
+    tempfile = Tempfile.new
+    tempfile.write("here-i-am")
+    tempfile.rewind
+
+    host.upload(tempfile, to: "see-me")
+
+    cat_output = host.run_command("cat see-me")
+
+    assert_equal 0, cat_output.exit_status
+    assert_equal "here-i-am", cat_output.stdout
+
+    rm_output = host.run_command("rm see-me")
+
+    assert_equal 0, rm_output.exit_status
+    assert_equal "", rm_output.stderr
+  ensure
+    tempfile.unlink
+  end
+
+  def test_creating_files_from_string_content
+    host = Warg::Host.new(address: "warg-testing")
+
+    host.create_file_from <<~SCRIPT, path: "see-me.sh", mode: 0755
+      #!/usr/bin/env bash
+
+      printf "here-i-am"
+    SCRIPT
+
+    script_output = host.run_command("./see-me.sh")
+
+    assert_equal 0, script_output.exit_status
+    assert_equal "here-i-am", script_output.stdout
+
+    rm_output = host.run_command("rm see-me.sh")
+
+    assert_equal 0, rm_output.exit_status
+    assert_equal "", rm_output.stderr
+  end
 end

@@ -9,8 +9,7 @@ class WargScriptTest < Minitest::Test
       top.user = "timothy"
     end
 
-    command_name = Warg::Command::Name.from_relative_script_path("process-snapshot.sh")
-    script = Warg::Script.new(command_name, context)
+    script = Warg::Script.new("process-snapshot.sh", context)
 
     assert_equal <<~SCRIPT, script.content
 #!/usr/bin/env bash
