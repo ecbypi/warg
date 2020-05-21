@@ -117,7 +117,7 @@ class WargHostCollectionTest < Minitest::Test
     ]
   end
 
-  def test_uploading_files
+  def test_uploading_and_downloading_files
     hosts = Warg::HostCollection.from("warg-testing")
 
     tempfile = Tempfile.new
@@ -131,11 +131,18 @@ class WargHostCollectionTest < Minitest::Test
     assert_equal [0], cat_outputs.map(&:exit_status)
     assert_equal %w( here-we-are ), cat_outputs.map(&:stdout)
 
+    download, = hosts.download("see-us")
+
+    assert_equal "here-we-are", download.read
+
     rm_outputs = hosts.run_command("rm see-us")
 
     assert_equal [0], rm_outputs.map(&:exit_status)
     assert_equal [""], rm_outputs.map(&:stderr)
   ensure
+    download.close
+    File.delete(download.path)
+
     tempfile.unlink
   end
 

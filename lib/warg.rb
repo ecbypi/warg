@@ -180,6 +180,21 @@ module Warg
       connection.scp.upload!(file, to)
     end
 
+    def download(path, to: nil)
+      content = connection.scp.download!(path)
+
+      if to
+        file = File.new(to, "w+b")
+      else
+        file = Tempfile.new(path)
+      end
+
+      file.write(content)
+      file.rewind
+
+      file
+    end
+
     def inspect
       %{#<#{self.class.name} uri=#{@uri.to_s}>}
     end
@@ -377,6 +392,12 @@ module Warg
     def upload(file, to:)
       each do |host|
         host.upload(file, to: to)
+      end
+    end
+
+    def download(path)
+      map do |host|
+        host.download(path)
       end
     end
 

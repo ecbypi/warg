@@ -45,7 +45,7 @@ class WargHostTest < Minitest::Test
     assert_equal "ssh://localhost?environment=hippa", host.to_s
   end
 
-  def test_uploading_files
+  def test_uploading_and_downloading_files
     host = Warg::Host.new(address: "warg-testing")
 
     tempfile = Tempfile.new
@@ -59,11 +59,19 @@ class WargHostTest < Minitest::Test
     assert_equal 0, cat_output.exit_status
     assert_equal "here-i-am", cat_output.stdout
 
+    download = host.download("see-me", to: "see-me-local")
+
+    assert_path_exists File.join(Dir.pwd, "see-me-local")
+    assert_equal "here-i-am", download.read
+
     rm_output = host.run_command("rm see-me")
 
     assert_equal 0, rm_output.exit_status
     assert_equal "", rm_output.stderr
   ensure
+    download.close
+    File.delete(download.path)
+
     tempfile.unlink
   end
 
