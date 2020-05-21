@@ -512,11 +512,21 @@ module Warg
 
   class Context < Config
     attr_reader :argv
+    attr_reader :parser
 
     def initialize(argv)
       @argv = argv
+      @parser = OptionParser.new
+
+      @parser.on("-h", "--hosts HOSTS", Array, "hosts to use") do |hosts_data|
+        hosts_data.each { |host_data| hosts.add(host_data) }
+      end
 
       super()
+    end
+
+    def parse_options!
+      @parser.parse(@argv)
     end
 
     def copy(config)
@@ -543,7 +553,6 @@ module Warg
       @context = Context.new(@argv)
       @context.copy(Warg.config)
 
-      parse_options!
       load_commands!
       load_scripts!
 
@@ -560,20 +569,6 @@ module Warg
     end
 
     private
-
-    def parse_options!
-      parser = OptionParser.new do |parser|
-        parser.on("-h", "--hosts HOSTS", Array, "hosts to use") do |hosts_data|
-          hosts_data.each { |host_data| @context.hosts.add(host_data) }
-        end
-
-        parser.on("-f", "--filter FILTERS", Array, "filters for filtering hosts") do |filters|
-          @context.hosts.filtered(filters)
-        end
-      end
-
-      parser.parse(@argv)
-    end
 
     def find_warg_directory!
       previous_directory = nil
@@ -835,10 +830,9 @@ module Warg
 
       def initialize(context)
         @context = context
-        @argv = @context.argv.dup
-        @parser = OptionParser.new
 
         configure_parser!
+        @context.parse_options!
       end
 
       def name
