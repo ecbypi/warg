@@ -826,6 +826,10 @@ module Warg
           command.run
           command
         end
+
+        def |(other)
+          ChainCommand.new(self, other)
+        end
       end
 
       def initialize(context)
@@ -845,6 +849,16 @@ module Warg
 
       def command_name
         self.class.command_name
+      end
+
+      def |(other)
+        other.(@context)
+      end
+
+      def chain(*others)
+        others.inject(self) do |execution, other|
+          execution | other
+        end
       end
 
       private
@@ -876,6 +890,21 @@ module Warg
     end
 
     include Behavior
+  end
+
+  class ChainCommand
+    def initialize(left, right)
+      @left = left
+      @right = right
+    end
+
+    def call(context)
+      @left.(context) | @right
+    end
+
+    def |(other)
+      ChainCommand.new(self, other)
+    end
   end
 
   class Script
