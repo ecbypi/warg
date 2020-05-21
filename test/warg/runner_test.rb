@@ -27,10 +27,17 @@ class WargRunnerTest < Minitest::Test
     assert_match(/\d+:\d+:\d+\s+up/, stdout)
   end
 
-  def test_raises_when_command_isnt_found
+  def test_prints_to_stderr_and_exits_when_command_isnt_found
     runner = Warg::Runner.new %w( downtime -h localhost )
 
-    assert_raises(RuntimeError) { runner.run }
+    _, stderr = capture_io do
+      begin
+        runner.run
+      rescue SystemExit
+      end
+    end
+
+    assert_equal %{Could not find command from ["downtime", "-h", "localhost"]\n}, stderr
   end
 
   def test_autoloads_scripts_as_commands

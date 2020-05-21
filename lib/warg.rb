@@ -552,7 +552,8 @@ module Warg
 
     def run
       if @command.nil?
-        raise "could not find command from #{@argv.inspect}"
+        $stderr.puts "Could not find command from #{@argv.inspect}"
+        exit 1
       end
 
       @command.(@context)
