@@ -126,16 +126,12 @@ class WargHostCollectionTest < Minitest::Test
 
     hosts.upload(tempfile, to: "see-us")
 
-    cat_outputs = hosts.map do |host|
-      host.run_command("cat see-us")
-    end
+    cat_outputs = hosts.run_command "cat see-us"
 
     assert_equal [0], cat_outputs.map(&:exit_status)
     assert_equal %w( here-we-are ), cat_outputs.map(&:stdout)
 
-    rm_outputs = hosts.map do |host|
-      host.run_command("rm see-us")
-    end
+    rm_outputs = hosts.run_command("rm see-us")
 
     assert_equal [0], rm_outputs.map(&:exit_status)
     assert_equal [""], rm_outputs.map(&:stderr)
@@ -152,16 +148,12 @@ class WargHostCollectionTest < Minitest::Test
       printf "here-we-are"
     SCRIPT
 
-    script_outputs = hosts.map do |host|
-      host.run_command("./see-us.sh")
-    end
+    script_outputs = hosts.run_command("./see-us.sh")
 
     assert_equal [0], script_outputs.map(&:exit_status)
     assert_equal %w( here-we-are ), script_outputs.map(&:stdout)
 
-    rm_outputs = hosts.map do |host|
-      host.run_command("rm see-us.sh")
-    end
+    rm_outputs = hosts.run_command("rm see-us.sh")
 
     assert_equal [0], rm_outputs.map(&:exit_status)
     assert_equal [""], rm_outputs.map(&:stderr)

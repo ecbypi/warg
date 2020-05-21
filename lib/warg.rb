@@ -390,6 +390,24 @@ module Warg
       self
     end
 
+    def run_script(script, order: :parallel, &callback)
+      run(order: order) do |host|
+        host.run_script(script, &callback)
+      end
+    end
+
+    def run_command(command, order: :parallel, &callback)
+      run(order: order) do |host|
+        host.run_command(command, &callback)
+      end
+    end
+
+    def run(order:, &block)
+      strategy = Executor.for(order)
+      executor = strategy.new(self)
+      executor.run(&block)
+    end
+
     def to_a
       @hosts.dup
     end
@@ -887,21 +905,11 @@ module Warg
 
         script = Script.new(script_name, @context)
 
-        on_hosts order: order do |host|
-          host.run_script(script, &callback)
-        end
+        @context.hosts.run_script(script, order: order, &callback)
       end
 
       def run_command(command, order: :parallel, &callback)
-        on_hosts order: order do |host|
-          host.run_command(command, &callback)
-        end
-      end
-
-      def on_hosts(order: :parallel, &block)
-        strategy = Executor.for(order)
-        executor = strategy.new(@context.hosts)
-        executor.run(&block)
+        @context.hosts.run_command(command, order: order, &callback)
       end
     end
 
