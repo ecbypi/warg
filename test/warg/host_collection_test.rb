@@ -67,6 +67,19 @@ class WargHostCollectionTest < Minitest::Test
     assert_equal host_collection.object_id, other_collection.object_id
   end
 
+  def test_from_with_nil
+    host_collection = Warg::HostCollection.from(nil)
+
+    assert_equal 0, host_collection.length
+    assert_equal [], host_collection.to_a
+  end
+
+  def test_from_with_invalid_data
+    assert_raises(Warg::InvalidHostDataError) do
+      Warg::HostCollection.from(1)
+    end
+  end
+
   def test_with_method_removes_items_not_matching_all_filters
     hosts_data = {
       "app:coffee-spout" => {

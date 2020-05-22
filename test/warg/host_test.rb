@@ -29,6 +29,22 @@ class WargHostTest < Minitest::Test
     assert_equal "ssh://patsy@signin.beta.app.com?stage=beta", host.to_s
   end
 
+  def test_from_with_invalid_array
+    error = assert_raises(Warg::InvalidHostDataError) do
+      Warg::Host.from([["localhost"]])
+    end
+
+    assert_equal %{could not instantiate a host from `[["localhost"]]'}, error.message
+  end
+
+  def test_from_with_invalid_data
+    error = assert_raises(Warg::InvalidHostDataError) do
+      Warg::Host.from(1)
+    end
+
+    assert_equal %{could not instantiate a host from `1'}, error.message
+  end
+
   def test_hash_like_access_to_properties
     host = Warg::Host.new(address: "localhost", properties: { environment: "non-hippa" })
 

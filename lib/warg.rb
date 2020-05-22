@@ -7,6 +7,16 @@ require "net/scp"
 require "concurrent/promise"
 
 module Warg
+  class InvalidHostDataError < StandardError
+    def initialize(host_data)
+      @host_data = host_data
+    end
+
+    def message
+      "could not instantiate a host from `#{@host_data.inspect}'"
+    end
+  end
+
   class Host
     module Parser
       module_function
@@ -61,12 +71,13 @@ module Warg
           end
 
           new(**attributes)
+        else
+          raise InvalidHostDataError.new(host_data)
         end
       when String
         new(**Parser.(host_data))
       else
-        $stderr.puts "InvalidHostError: cannot translate `#{host_data}' into a host"
-        exit 1
+        raise InvalidHostDataError.new(host_data)
       end
     end
 
@@ -361,7 +372,7 @@ module Warg
       when nil
         new
       else
-        raise ArgumentError, "cannot build host collection from `#{value.inspect}'"
+        raise InvalidHostDataError.new(value)
       end
     end
 
