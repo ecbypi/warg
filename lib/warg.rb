@@ -486,6 +486,8 @@ module Warg
     end
 
     class VariableSet
+      attr_reader :context
+
       def initialize(name, context)
         @_name = name
         @context = context
@@ -493,8 +495,12 @@ module Warg
         @properties = Set.new
       end
 
+      def context=(*)
+        raise NotImplementedError
+      end
+
       def define!(property_name)
-        @properties << property_name
+        @properties << property_name.to_s
       end
 
       def copy(other)
@@ -509,6 +515,10 @@ module Warg
         @properties.each_with_object({}) do |property_name, variables|
           variables["#{@_name}_#{property_name}"] = send(property_name)
         end
+      end
+
+      def respond_to_missing?(name, include_private = false)
+        @properties.include?(name.to_s) || super
       end
 
       protected
@@ -528,21 +538,13 @@ module Warg
           value = block || args
 
           extend Property.new(reader_name, *value)
-        else
-          super
         end
       end
 
       private
 
-      attr_reader :context
-
-      def context=(*)
-        raise NoMethodError
-      end
-
       class Property < Module
-        REGEXP = /[A-Za-z_]+/
+        REGEXP = /^[A-Za-z_]+$/
 
         def initialize(name, initial_value = nil)
           @name = name
