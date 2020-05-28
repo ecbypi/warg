@@ -3,8 +3,8 @@ require "test_helper"
 class WargExecutorTest < Minitest::Test
   def test_parallel_execution
     hosts = Warg::HostCollection.from [
-      "vagrant@warg-testing",
-      "vagrant@localhost:2222"
+      "warg@warg-testing",
+      "warg@localhost:2222"
     ]
 
     executor = Warg::Executor.for(:parallel).new(hosts)
@@ -29,8 +29,8 @@ class WargExecutorTest < Minitest::Test
 
   def test_serial_execution
     hosts = Warg::HostCollection.from [
-      "vagrant@warg-testing",
-      "vagrant@localhost:2222",
+      "warg@warg-testing",
+      "warg@localhost:2222",
       "nuba-nuba"
     ]
 
@@ -67,8 +67,8 @@ class WargExecutorTest < Minitest::Test
     end
 
     hosts = Warg::HostCollection.from [
-      "vagrant@warg-testing",
-      "vagrant@localhost:2222",
+      "warg@warg-testing",
+      "warg@localhost:2222",
       "nuba-nuba"
     ]
 

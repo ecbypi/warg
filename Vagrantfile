@@ -70,4 +70,9 @@ Vagrant.configure("2") do |config|
   #   apt-get update
   #   apt-get install -y apache2
   # SHELL
+
+  config.vm.provision :ansible_local do |ansible|
+    ansible.compatibility_mode = "2.0"
+    ansible.playbook = "test/ci-playbook.yml"
+  end
 end

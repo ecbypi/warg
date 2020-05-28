@@ -2,7 +2,7 @@ require "test_helper"
 
 class WargRunnerTest < Minitest::Test
   def test_loading_config_and_code_and_running_command
-    runner = Warg::Runner.new %w( uptime -h vagrant@warg-testing )
+    runner = Warg::Runner.new %w( uptime -h warg@warg-testing )
 
     stdout, _ = capture_io do
       runner.run
@@ -43,11 +43,11 @@ class WargRunnerTest < Minitest::Test
   def test_autoloads_scripts_as_commands
     Warg.configure do |config|
       config.variables(:top) do |top|
-        top.user = "vagrant"
+        top.user = "warg"
       end
     end
 
-    runner = Warg::Runner.new %w( process-snapshot -h vagrant@nuba-nuba )
+    runner = Warg::Runner.new %w( process-snapshot -h warg@nuba-nuba )
     ProcessSnapshot.extend(Warg::Testing::CaptureStdout)
 
     stdout, _ = capture_io do
@@ -55,6 +55,6 @@ class WargRunnerTest < Minitest::Test
     end
 
     assert_match(/top - \d+:\d+:\d+\s+up/, stdout)
-    assert_match(/^\s*\d+\s+vagrant/, stdout)
+    assert_match(/^\s*\d+\s+warg/, stdout)
   end
 end

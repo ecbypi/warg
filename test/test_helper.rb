@@ -1,7 +1,9 @@
 require "simplecov"
 SimpleCov.start do
   add_filter %r{^/(?:warg|test)/}
-  enable_coverage :branch
+  # For running on ruby 2.3 on CI. Latest simplecov requires ruby 2.4+ and `enable_coverage`
+  # only exists on the latest versions
+  respond_to?(:enable_coverage) and enable_coverage(:branch)
 end
 
 require "byebug"
@@ -30,13 +32,12 @@ module Warg
     module_function
 
     VAGRANT_SSH_CONFIG = File.expand_path("ssh_config", __dir__)
+
     VAGRANT_PRIVATE_KEY = File.expand_path \
       File.join("..", ".vagrant", "machines", "warg-testing", "virtualbox", "private_key"),
       __dir__
 
-
     class << self
-      attr_accessor :runner
       attr_accessor :dummy_directory
     end
 
@@ -68,7 +69,7 @@ module Warg
       end
 
       def install_path
-        remote_path.relative_path_from("$HOME")
+        remote_path.relative_path_from Pathname.new("$HOME")
       end
 
       def install_directory
@@ -78,8 +79,9 @@ module Warg
 
     module CaptureStdout
       def self.extended(klass)
-        klass.alias_method :default_run, :run
         klass.class_eval <<-RUN
+          alias_method :default_run, :run
+
           def run
             results = default_run
 
@@ -100,15 +102,16 @@ module Net
       def self.default_files
         @@default_files.clone.unshift Warg::Testing::VAGRANT_SSH_CONFIG
       end
+    end
 
-      class << self
-        alias_method :default_for, :for
+    module Authentication
+      class Session
+        private
 
-        def for(host, files=expandable_default_files)
-          result = default_for(host, files)
+        alias_method :original_default_keys, :default_keys
 
-          result[:keys] = Array(result[:keys]).unshift(Warg::Testing::VAGRANT_PRIVATE_KEY)
-          result
+        def default_keys
+          original_default_keys.unshift(Warg::Testing::VAGRANT_PRIVATE_KEY)
         end
       end
     end

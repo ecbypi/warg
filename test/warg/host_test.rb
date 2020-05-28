@@ -124,7 +124,7 @@ class WargHostTest < Minitest::Test
   end
 
   def test_outcome_for_stdout_and_stderr
-    host = Warg::Host.new(address: "nuba-nuba", user: "vagrant")
+    host = Warg::Host.new(address: "nuba-nuba", user: "warg")
 
     stdout_outcome = host.run_command %{printf "this is on stdout"}
     stderr_outcome = host.run_command %{1>&2 printf "this is on stderr"}
@@ -139,7 +139,7 @@ class WargHostTest < Minitest::Test
   def test_outcome_for_command_failure_from_connection_errors
     # multiple hosts to test different reasons `Net::SSH.start` will fail
     hosts = [
-      Warg::Host.new(address: "jub-jub", user: "vagrant"),    # no such host
+      Warg::Host.new(address: "jub-jub", user: "warg"),    # no such host
       Warg::Host.new(address: "localhost", port: 22222),      # host exists, port 222 not open
       Warg::Host.new(address: "warg-testing", user: "chanel") # host exists, incorrect user
     ]
@@ -163,7 +163,7 @@ class WargHostTest < Minitest::Test
   end
 
   def test_outcome_for_command_failure_from_nonzero_exit_status
-    host = Warg::Host.from "vagrant@warg-testing"
+    host = Warg::Host.from "warg@warg-testing"
 
     result = host.run_command "exit 37"
 
@@ -179,7 +179,7 @@ class WargHostTest < Minitest::Test
   end
 
   def test_outcome_for_command_failure_from_exit_signal
-    host = Warg::Host.from "vagrant@warg-testing"
+    host = Warg::Host.from "warg@warg-testing"
 
     script_content = <<~SCRIPT
       #!/usr/bin/env bash

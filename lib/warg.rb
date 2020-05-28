@@ -1,9 +1,22 @@
+require "uri"
 require "optparse"
 require "pathname"
 require "digest/sha1"
 
 require "net/ssh"
 require "net/scp"
+
+unless Hash.method_defined?(:transform_keys)
+  class Hash
+    def transform_keys
+      if block_given?
+        map { |key, value| [yield(key), value] }.to_h
+      else
+        enum_for(:transform_keys)
+      end
+    end
+  end
+end
 
 module Warg
   class InvalidHostDataError < StandardError
@@ -495,6 +508,10 @@ module Warg
 
     alias eql? ==
 
+    def hash
+      inspect.hash
+    end
+
     def run_command(command, &callback)
       outcome = CommandOutcome.new(self, command)
 
@@ -945,7 +962,7 @@ module Warg
       else
         @variables_sets << variables_name
 
-        singleton_class.attr_reader(variables_name)
+        singleton_class.send(:attr_reader, variables_name)
         variables_object = instance_variable_set(ivar_name, VariableSet.new(variables_name, self))
       end
 
@@ -1204,7 +1221,7 @@ module Warg
 
     def self.register(name, &block)
       strategy = Class.new(self)
-      strategy.define_method(:in_order, &block)
+      strategy.send(:define_method, :in_order, &block)
 
       @strategies[name] = strategy
     end
@@ -1637,7 +1654,7 @@ module Warg
     end
 
     def install_path
-      @remote_path.relative_path_from("$HOME")
+      @remote_path.relative_path_from Pathname.new("$HOME")
     end
 
     def to_s

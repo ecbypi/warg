@@ -1,0 +1,35 @@
+version: v1.0
+name: warg tests
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+blocks:
+  - name: Tests
+    task:
+      jobs:
+        - name: m
+          matrix:
+            - env_var: RUBY_VERSION
+              values:
+                - "2.0"
+                - "2.1"
+                - "2.2"
+                - "2.3"
+                - "2.4"
+                - "2.5"
+                - "2.6"
+                - "2.7"
+
+          commands:
+            - checkout
+
+            - ansible-playbook test/ci-playbook.yml
+
+            - sem-version ruby $RUBY_VERSION
+
+            - cache restore gems-$RUBY_VERSION-$SEMAPHORE_GIT_BRANCH-$(checksum warg.gemspec),gems-$RUBY_VERSION-$SEMAPHORE_GIT_BRANCH-,gems-$RUBY_VERSION-master-
+            - bundle install --path vendor/bundle --jobs 4 --retry 3
+            - cache store gems-$SEMAPHORE_GIT_BRANCH-$(checksum Gemfile.lock) vendor/bundle
+
+            - bundle exec m -r test

@@ -1,6 +1,6 @@
 Host warg-testing nuba-nuba
   HostName 127.0.0.1
-  User vagrant
+  User warg
   Port 2222
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no

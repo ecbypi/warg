@@ -1,0 +1,83 @@
+---
+- hosts:
+  - localhost
+  - warg-testing
+  become: yes
+  become_method: sudo
+
+  tasks:
+    - name: disable selinux; simplest way to give sshd access to port 2222
+      selinux:
+        state: disabled
+      # NOTE: This test is a shortcut to differentiating between CentOS in vagrant and Debian
+      # on CI. CentOS has the python packages needed to work with SELinux and has it enabled.
+      # Debian does not have the python packages installed and does not run with SELinux
+      # enabled.
+      when: ansible_selinux_python_present
+
+    - name: create warg user for testing
+      user:
+        name: warg
+        state: present
+        shell: /bin/bash
+
+    - name: create .ssh directory or warg
+      file:
+        path: /home/warg/.ssh
+        state: directory
+        mode: 0700
+        owner: warg
+        group: warg
+
+    - name: create SSH keypair for default user to authenticate with warg user
+      openssh_keypair:
+        path: "/home/{{ ansible_user }}/.ssh/id_rsa"
+        state: present
+        owner: "{{ ansible_user }}"
+        comment: "{{ ansible_user }}@localhost"
+      register: ssh_keypair
+
+    - name: add generated SSH public key to warg's authorized_keys file
+      lineinfile:
+        path: /home/warg/.ssh/authorized_keys
+        line: "{{ ssh_keypair.public_key }}"
+        state: present
+        create: yes
+        owner: warg
+        group: warg
+        mode: 0600
+
+    - name: grab contents of current user's authorized_keys file
+      slurp:
+        path: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+      register: ssh_authorized_key
+
+    - name: add current user's authorized keys to warg's
+      lineinfile:
+        path: /home/warg/.ssh/authorized_keys
+        line: "{{ ssh_authorized_key['content'] | b64decode }}"
+        state: present
+
+    - name: uncomment default port declaration if exists
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "Port 22"
+        state: present
+        regexp: "#Port 22"
+      notify:
+        - restart_sshd
+
+    - name: update sshd to listen on port 2222
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: Port 2222
+        state: present
+        insertafter: "^Port \\d+"
+      notify:
+        - restart_sshd
+
+  handlers:
+    - name: restart_sshd
+      service:
+        name: sshd
+        state: restarted
