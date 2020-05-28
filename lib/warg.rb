@@ -1075,7 +1075,8 @@ module Warg
           if interpolations.key?($1)
             interpolations[$1]
           else
-            Console.warn "[WARN] `#{$1}' is not defined"
+            $stderr.puts "[WARN] `#{$1}' is not defined in interpolations or context variables"
+            $stderr.puts "[WARN]   leaving interpolation `#{match}' as is"
             match
           end
         end
