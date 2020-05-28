@@ -567,10 +567,6 @@ module Warg
         end
       end
 
-      def respond_to_missing?(name, include_private = false)
-        @properties.include?(name.to_s) || super
-      end
-
       protected
 
       attr_reader :properties
