@@ -131,4 +131,69 @@ class WargHostTest < Minitest::Test
     assert_equal "", stdout
     assert_equal "this is on stdout".reverse + "this is on stderr", stderr
   end
+
+  def test_callbacks_for_command_failure_from_connection_errors
+    # multiple hosts to test different reasons `Net::SSH.start` will fail
+    hosts = [
+      Warg::Host.new(address: "jub-jub", user: "vagrant"),    # no such host
+      Warg::Host.new(address: "localhost", port: 22222),      # host exists, port 222 not open
+      Warg::Host.new(address: "warg-testing", user: "chanel") # host exists, incorrect user
+    ]
+
+    failure_count = 0
+
+    hosts.each do |host|
+      ls_output = host.run_command "ls" do |execution|
+        execution.on_failure do |failure_reason, command_output|
+          failure_count += 1
+        end
+      end
+
+      assert_equal :connection_error, ls_output.failure_reason
+      assert_predicate ls_output, :failed?
+    end
+
+    assert_equal 3, failure_count
+  end
+
+  def test_callbacks_for_command_failure_from_nonzero_exit_status
+    host = Warg::Host.from "vagrant@warg-testing"
+
+    failure_count = 0
+
+    output = host.run_command "exit 37" do |execution|
+      execution.on_failure do |failure_reason, command_output|
+        failure_count += 1
+      end
+    end
+
+    assert_equal 37, output.exit_status
+    assert_equal :nonzero_exit_status, output.failure_reason
+    assert_equal 1, failure_count
+  end
+
+  def test_callbacks_for_command_failure_from_exit_signal
+    host = Warg::Host.from "vagrant@warg-testing"
+
+    failure_count = 0
+
+    script_content = <<~SCRIPT
+      #!/usr/bin/env bash
+
+      kill -9 $$
+    SCRIPT
+
+    script = Warg::Testing::TestScript.new(content: script_content, name: "test-exit-signal")
+
+    output = host.run_script script do |execution|
+      execution.on_failure do |failure_reason, command_output|
+        failure_count += 1
+      end
+    end
+
+    assert_nil output.exit_status
+    assert_equal :exit_signal, output.failure_reason
+    assert_equal "KILL", output.exit_signal
+    assert_equal 1, failure_count
+  end
 end

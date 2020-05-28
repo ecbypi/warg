@@ -160,6 +160,9 @@ module Warg
       connection.loop
 
       command_output
+    rescue SocketError, Errno::ECONNREFUSED, Net::SSH::AuthenticationFailed => error
+      command_output.connection_failed(-1, error.message)
+      command_output
     end
 
     def run_script(script, &callback)
@@ -246,9 +249,10 @@ module Warg
 
     class CommandOutput
       attr_reader :command
+      attr_reader :connection_error_code
+      attr_reader :connection_error_reason
       attr_reader :exit_signal
       attr_reader :exit_status
-      attr_reader :failure_code
       attr_reader :failure_reason
       attr_reader :finished_at
       attr_reader :host
@@ -268,6 +272,8 @@ module Warg
 
         @started_at = nil
         @finished_at = nil
+
+        @failure_callback = ->(failure_reason, output) {}
       end
 
       def collect_stdout(data)
@@ -288,6 +294,10 @@ module Warg
         @stderr_callback = block
       end
 
+      def on_failure(&block)
+        @failure_callback = block
+      end
+
       def successful?
         exit_status && exit_status.zero?
       end
@@ -305,16 +315,28 @@ module Warg
           $stderr.puts "[WARN] cannot change `#exit_status` after command has finished"
         else
           @exit_status = value
+
+          if failed?
+            failed! :nonzero_exit_status
+          end
         end
+
+        value
       end
 
       def exit_signal=(value)
         if finished?
           $stderr.puts "[WARN] cannot change `#exit_signal` after command has finished"
         else
+          @failure_reason = :exit_signal
+
           @exit_signal = value
           @exit_signal.freeze
+
+          failed! :exit_signal
         end
+
+        value
       end
 
       def duration
@@ -345,8 +367,17 @@ module Warg
       end
 
       def connection_failed(code, reason)
-        @failure_code = code.freeze
-        @failure_reason = reason.freeze
+        @connection_error_code = code.freeze
+        @connection_error_reason = reason.freeze
+
+        failed! :connection_error
+      end
+
+      private
+
+      def failed!(reason)
+        @failure_reason = reason
+        @failure_callback.(@failure_reason, self)
       end
     end
   end

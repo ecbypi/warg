@@ -47,6 +47,27 @@ module Warg
       end
     end
 
+    class TestScript
+      attr_reader :content
+
+      def initialize(content:, name:)
+        @content = content
+        @name = name
+      end
+
+      def remote_path
+        install_directory.join(@name)
+      end
+
+      def install_path
+        remote_path.relative_path_from("$HOME")
+      end
+
+      def install_directory
+        Warg::Script::REMOTE_DIRECTORY
+      end
+    end
+
     module CaptureStdout
       def self.extended(klass)
         klass.alias_method :default_run, :run
