@@ -121,16 +121,20 @@ module Warg
     def run_command(command, &callback)
       command_output = CommandOutput.new(self, command)
 
+      if callback
+        callback.call(command_output)
+      end
+
       connection.open_channel do |channel|
         channel.exec(command) do |_, success|
           command_output.command_started!
 
           channel.on_data do |_, data|
-            command_output.stdout << data
+            command_output.collect_stdout(data)
           end
 
           channel.on_extended_data do |_, __, data|
-            command_output.stderr << data
+            command_output.collect_stderr(data)
           end
 
           channel.on_request("exit-status") do |_, data|
@@ -154,10 +158,6 @@ module Warg
       end
 
       connection.loop
-
-      if callback
-        callback.call(command_output)
-      end
 
       command_output
     end
@@ -261,13 +261,32 @@ module Warg
         @command = command
 
         @stdout = ""
+        @stdout_callback = ->(data) {}
+
         @stderr = ""
+        @stderr_callback = ->(data) {}
 
         @started_at = nil
         @finished_at = nil
       end
 
-      # TODO: Figure out if this warnings should be errors or removed
+      def collect_stdout(data)
+        @stdout << data
+        @stdout_callback.(data)
+      end
+
+      def collect_stderr(data)
+        @stderr << data
+        @stderr_callback.(data)
+      end
+
+      def on_stdout(&block)
+        @stdout_callback = block
+      end
+
+      def on_stderr(&block)
+        @stderr_callback = block
+      end
 
       def successful?
         exit_status && exit_status.zero?
