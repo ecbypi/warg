@@ -55,6 +55,6 @@ class WargRunnerTest < Minitest::Test
     end
 
     assert_match(/top - \d+:\d+:\d+\s+up/, stdout)
-    assert_match(/^\s+\d+\s+vagrant/, stdout)
+    assert_match(/^\s*\d+\s+vagrant/, stdout)
   end
 end
