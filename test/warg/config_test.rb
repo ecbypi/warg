@@ -15,10 +15,15 @@ class WargConfigTest < Minitest::Test
       app.name { "yummy-only" }
     end
 
+    config.variables(:deploy) do |deploy|
+      deploy.tag { timestamp.strftime("%Y-%m-%d--%H-%M-%S") }
+    end
+
     assert_equal "yummy-only", config.app.name
     assert_equal "yummy-only", config.deploy.user
     assert_equal "/srv/yummy-only", config.deploy.path
     assert_equal Time.new(2020, 4, 20, 4, 20), config.deploy.timestamp
+    assert_equal "2020-04-20--04-20-00", config.deploy.tag
   end
 
   def test_hash_like_access_for_variable_sets
