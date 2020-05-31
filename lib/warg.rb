@@ -671,8 +671,8 @@ module Warg
       @context = Context.new(@argv)
       @context.copy(Warg.config)
 
-      load_commands!
       load_scripts!
+      load_commands!
 
       @command = Command.find(@argv)
     end
