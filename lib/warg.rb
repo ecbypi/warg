@@ -166,15 +166,22 @@ module Warg
     end
 
     def run_script(script, &callback)
-      mkdir_output = run_command "mkdir -p #{script.install_directory}"
-
-      if mkdir_output.failed?
-        raise "Could not create directory on #{script.install_directory} on #{self}"
-      end
+      create_directory script.install_directory
 
       create_file_from script.content, path: script.install_path, mode: 0755
 
       run_command(script.remote_path, &callback)
+    end
+
+    def create_directory(directory)
+      command = "mkdir -p #{directory}"
+
+      connection.open_channel do |channel|
+        channel.exec(command)
+        channel.wait
+      end
+
+      connection.loop
     end
 
     def create_file_from(content, path:, mode: 0644)
