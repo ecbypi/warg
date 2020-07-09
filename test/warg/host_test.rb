@@ -142,18 +142,28 @@ class WargHostTest < Minitest::Test
 
     failure_count = 0
 
-    hosts.each do |host|
-      ls_result = host.run_command "ls" do |command_outcome|
+    socket_error_result, connection_refused_error_result, authentication_error_result = hosts.map do |host|
+      result = host.run_command "ls" do |command_outcome|
         command_outcome.on_failure do |failure_reason, outcome|
           failure_count += 1
         end
       end
 
-      assert_equal :connection_error, ls_result.failure_reason
-      assert_predicate ls_result, :failed?
+      # common properties of all errors; place here to avoid repeating
+      assert result.failed?
+      assert_equal :connection_error, result.failure_reason
+      assert_equal(-1, result.connection_error_code)
+      assert_nil result.started_at
+      assert_nil result.finished_at
+
+      result
     end
 
     assert_equal 3, failure_count
+
+    assert_match(/SocketError/, socket_error_result.connection_error_reason)
+    assert_match(/Errno::ECONNREFUSED/, connection_refused_error_result.connection_error_reason)
+    assert_match(/Net::SSH::AuthenticationFailed/, authentication_error_result.connection_error_reason)
   end
 
   def test_callbacks_for_command_failure_from_nonzero_exit_status

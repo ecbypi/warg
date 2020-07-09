@@ -161,7 +161,7 @@ module Warg
 
       outcome
     rescue SocketError, Errno::ECONNREFUSED, Net::SSH::AuthenticationFailed => error
-      outcome.connection_failed(-1, error.message)
+      outcome.connection_failed(-1, "#{error.class}: #{error.message}")
       outcome
     end
 
