@@ -122,7 +122,7 @@ module Warg
       outcome = CommandOutcome.new(self, command)
 
       if callback
-        callback.call(outcome)
+        callback.call(self, outcome)
       end
 
       connection.open_channel do |channel|
@@ -272,25 +272,25 @@ module Warg
         @command = command
 
         @stdout = ""
-        @stdout_callback = ->(data) {}
+        @stdout_callback = ->(data, host) {}
 
         @stderr = ""
-        @stderr_callback = ->(data) {}
+        @stderr_callback = ->(data, host) {}
 
         @started_at = nil
         @finished_at = nil
 
-        @failure_callback = ->(failure_reason, outcome) {}
+        @failure_callback = ->(failure_reason, host, outcome) {}
       end
 
       def collect_stdout(data)
         @stdout << data
-        @stdout_callback.(data)
+        @stdout_callback.(data, host)
       end
 
       def collect_stderr(data)
         @stderr << data
-        @stderr_callback.(data)
+        @stderr_callback.(data, host)
       end
 
       def on_stdout(&block)
@@ -384,7 +384,7 @@ module Warg
 
       def failed!(reason)
         @failure_reason = reason
-        @failure_callback.(@failure_reason, self)
+        @failure_callback.(@failure_reason, host, self)
       end
     end
   end

@@ -115,14 +115,14 @@ class WargHostTest < Minitest::Test
     host = Warg::Host.new(address: "nuba-nuba", user: "vagrant")
 
     stdout, stderr = capture_io do
-      host.run_command %{printf "this is on stdout"} do |command_outcome|
-        command_outcome.on_stdout do |data|
+      host.run_command %{printf "this is on stdout"} do |host, command_outcome|
+        command_outcome.on_stdout do |data, host|
           $stderr.print data.reverse
         end
       end
 
-      host.run_command %{1>&2 printf "this is on stderr"} do |command_outcome|
-        command_outcome.on_stderr do |data|
+      host.run_command %{1>&2 printf "this is on stderr"} do |host, command_outcome|
+        command_outcome.on_stderr do |data, host|
           $stderr.print data
         end
       end
@@ -143,8 +143,8 @@ class WargHostTest < Minitest::Test
     failure_count = 0
 
     socket_error_result, connection_refused_error_result, authentication_error_result = hosts.map do |host|
-      result = host.run_command "ls" do |command_outcome|
-        command_outcome.on_failure do |failure_reason, outcome|
+      result = host.run_command "ls" do |host, command_outcome|
+        command_outcome.on_failure do |failure_reason, host, outcome|
           failure_count += 1
         end
       end
@@ -171,8 +171,8 @@ class WargHostTest < Minitest::Test
 
     failure_marker = nil
 
-    result = host.run_command "exit 37" do |command_outcome|
-      command_outcome.on_failure do |failure_reason, outcome|
+    result = host.run_command "exit 37" do |host, command_outcome|
+      command_outcome.on_failure do |failure_reason, host, outcome|
         failure_marker = "shwish"
       end
     end
@@ -203,8 +203,8 @@ class WargHostTest < Minitest::Test
 
     script = Warg::Testing::TestScript.new(content: script_content, name: "test-exit-signal")
 
-    result = host.run_script script do |command_outcome|
-      command_outcome.on_failure do |failure_reason, outcome|
+    result = host.run_script script do |host, command_outcome|
+      command_outcome.on_failure do |failure_reason, host, outcome|
         failure_marker = "bajoop"
       end
     end
