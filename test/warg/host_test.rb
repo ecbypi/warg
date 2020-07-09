@@ -169,23 +169,31 @@ class WargHostTest < Minitest::Test
   def test_callbacks_for_command_failure_from_nonzero_exit_status
     host = Warg::Host.from "vagrant@warg-testing"
 
-    failure_count = 0
+    failure_marker = nil
 
     result = host.run_command "exit 37" do |command_outcome|
       command_outcome.on_failure do |failure_reason, outcome|
-        failure_count += 1
+        failure_marker = "shwish"
       end
     end
 
-    assert_equal 37, result.exit_status
+    assert result.failed?
+    refute result.successful?
+
     assert_equal :nonzero_exit_status, result.failure_reason
-    assert_equal 1, failure_count
+
+    assert_equal 37, result.exit_status
+    assert_nil result.exit_signal
+
+    refute_nil result.duration
+
+    assert_equal "shwish", failure_marker
   end
 
   def test_callbacks_for_command_failure_from_exit_signal
     host = Warg::Host.from "vagrant@warg-testing"
 
-    failure_count = 0
+    failure_marker = nil
 
     script_content = <<~SCRIPT
       #!/usr/bin/env bash
@@ -197,13 +205,20 @@ class WargHostTest < Minitest::Test
 
     result = host.run_script script do |command_outcome|
       command_outcome.on_failure do |failure_reason, outcome|
-        failure_count += 1
+        failure_marker = "bajoop"
       end
     end
 
-    assert_nil result.exit_status
+    assert result.failed?
+    refute result.successful?
+
     assert_equal :exit_signal, result.failure_reason
+
     assert_equal "KILL", result.exit_signal
-    assert_equal 1, failure_count
+    assert_nil result.exit_status
+
+    refute_nil result.duration
+
+    assert_equal "bajoop", failure_marker
   end
 end
