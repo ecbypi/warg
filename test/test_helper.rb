@@ -73,11 +73,11 @@ module Warg
         klass.alias_method :default_run, :run
         klass.class_eval <<-RUN
           def run
-            outputs = default_run
+            results = default_run
 
-            outputs.each do |output|
-              $stdout.puts output.stdout
-              $stderr.puts output.stderr
+            results.each do |result|
+              $stdout.puts result.stdout
+              $stderr.puts result.stderr
             end
           end
         RUN

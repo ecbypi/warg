@@ -70,20 +70,20 @@ class WargHostTest < Minitest::Test
 
     host.upload(tempfile, to: "see-me")
 
-    cat_output = host.run_command("cat see-me")
+    cat_result = host.run_command("cat see-me")
 
-    assert_equal 0, cat_output.exit_status
-    assert_equal "here-i-am", cat_output.stdout
+    assert_equal 0, cat_result.exit_status
+    assert_equal "here-i-am", cat_result.stdout
 
     download = host.download("see-me", to: "see-me-local")
 
     assert_path_exists File.join(Dir.pwd, "see-me-local")
     assert_equal "here-i-am", download.read
 
-    rm_output = host.run_command("rm see-me")
+    rm_result = host.run_command("rm see-me")
 
-    assert_equal 0, rm_output.exit_status
-    assert_equal "", rm_output.stderr
+    assert_equal 0, rm_result.exit_status
+    assert_equal "", rm_result.stderr
   ensure
     download.close
     File.delete(download.path)
@@ -100,29 +100,29 @@ class WargHostTest < Minitest::Test
       printf "here-i-am"
     SCRIPT
 
-    script_output = host.run_command("./see-me.sh")
+    script_result = host.run_command("./see-me.sh")
 
-    assert_equal 0, script_output.exit_status
-    assert_equal "here-i-am", script_output.stdout
+    assert_equal 0, script_result.exit_status
+    assert_equal "here-i-am", script_result.stdout
 
-    rm_output = host.run_command("rm see-me.sh")
+    rm_result = host.run_command("rm see-me.sh")
 
-    assert_equal 0, rm_output.exit_status
-    assert_equal "", rm_output.stderr
+    assert_equal 0, rm_result.exit_status
+    assert_equal "", rm_result.stderr
   end
 
   def test_callbacks_for_stdout_and_stderr
     host = Warg::Host.new(address: "nuba-nuba", user: "vagrant")
 
     stdout, stderr = capture_io do
-      host.run_command %{printf "this is on stdout"} do |execution|
-        execution.on_stdout do |data|
+      host.run_command %{printf "this is on stdout"} do |command_outcome|
+        command_outcome.on_stdout do |data|
           $stderr.print data.reverse
         end
       end
 
-      host.run_command %{1>&2 printf "this is on stderr"} do |execution|
-        execution.on_stderr do |data|
+      host.run_command %{1>&2 printf "this is on stderr"} do |command_outcome|
+        command_outcome.on_stderr do |data|
           $stderr.print data
         end
       end
@@ -143,14 +143,14 @@ class WargHostTest < Minitest::Test
     failure_count = 0
 
     hosts.each do |host|
-      ls_output = host.run_command "ls" do |execution|
-        execution.on_failure do |failure_reason, command_output|
+      ls_result = host.run_command "ls" do |command_outcome|
+        command_outcome.on_failure do |failure_reason, outcome|
           failure_count += 1
         end
       end
 
-      assert_equal :connection_error, ls_output.failure_reason
-      assert_predicate ls_output, :failed?
+      assert_equal :connection_error, ls_result.failure_reason
+      assert_predicate ls_result, :failed?
     end
 
     assert_equal 3, failure_count
@@ -161,14 +161,14 @@ class WargHostTest < Minitest::Test
 
     failure_count = 0
 
-    output = host.run_command "exit 37" do |execution|
-      execution.on_failure do |failure_reason, command_output|
+    result = host.run_command "exit 37" do |command_outcome|
+      command_outcome.on_failure do |failure_reason, outcome|
         failure_count += 1
       end
     end
 
-    assert_equal 37, output.exit_status
-    assert_equal :nonzero_exit_status, output.failure_reason
+    assert_equal 37, result.exit_status
+    assert_equal :nonzero_exit_status, result.failure_reason
     assert_equal 1, failure_count
   end
 
@@ -185,15 +185,15 @@ class WargHostTest < Minitest::Test
 
     script = Warg::Testing::TestScript.new(content: script_content, name: "test-exit-signal")
 
-    output = host.run_script script do |execution|
-      execution.on_failure do |failure_reason, command_output|
+    result = host.run_script script do |command_outcome|
+      command_outcome.on_failure do |failure_reason, outcome|
         failure_count += 1
       end
     end
 
-    assert_nil output.exit_status
-    assert_equal :exit_signal, output.failure_reason
-    assert_equal "KILL", output.exit_signal
+    assert_nil result.exit_status
+    assert_equal :exit_signal, result.failure_reason
+    assert_equal "KILL", result.exit_signal
     assert_equal 1, failure_count
   end
 end

@@ -139,19 +139,19 @@ class WargHostCollectionTest < Minitest::Test
 
     hosts.upload(tempfile, to: "see-us")
 
-    cat_outputs = hosts.run_command "cat see-us"
+    cat_results = hosts.run_command "cat see-us"
 
-    assert_equal [0], cat_outputs.map(&:exit_status)
-    assert_equal %w( here-we-are ), cat_outputs.map(&:stdout)
+    assert_equal [0], cat_results.map(&:exit_status)
+    assert_equal %w( here-we-are ), cat_results.map(&:stdout)
 
     download, = hosts.download("see-us")
 
     assert_equal "here-we-are", download.read
 
-    rm_outputs = hosts.run_command("rm see-us")
+    rm_results = hosts.run_command("rm see-us")
 
-    assert_equal [0], rm_outputs.map(&:exit_status)
-    assert_equal [""], rm_outputs.map(&:stderr)
+    assert_equal [0], rm_results.map(&:exit_status)
+    assert_equal [""], rm_results.map(&:stderr)
   ensure
     download.close
     File.delete(download.path)
@@ -168,15 +168,15 @@ class WargHostCollectionTest < Minitest::Test
       printf "here-we-are"
     SCRIPT
 
-    script_outputs = hosts.run_command("./see-us.sh")
+    script_results = hosts.run_command("./see-us.sh")
 
-    assert_equal [0], script_outputs.map(&:exit_status)
-    assert_equal %w( here-we-are ), script_outputs.map(&:stdout)
+    assert_equal [0], script_results.map(&:exit_status)
+    assert_equal %w( here-we-are ), script_results.map(&:stdout)
 
-    rm_outputs = hosts.run_command("rm see-us.sh")
+    rm_results = hosts.run_command("rm see-us.sh")
 
-    assert_equal [0], rm_outputs.map(&:exit_status)
-    assert_equal [""], rm_outputs.map(&:stderr)
+    assert_equal [0], rm_results.map(&:exit_status)
+    assert_equal [""], rm_results.map(&:stderr)
   end
 
   def uris_from(collection)

@@ -119,38 +119,38 @@ module Warg
     end
 
     def run_command(command, &callback)
-      command_output = CommandOutput.new(self, command)
+      outcome = CommandOutcome.new(self, command)
 
       if callback
-        callback.call(command_output)
+        callback.call(outcome)
       end
 
       connection.open_channel do |channel|
         channel.exec(command) do |_, success|
-          command_output.command_started!
+          outcome.command_started!
 
           channel.on_data do |_, data|
-            command_output.collect_stdout(data)
+            outcome.collect_stdout(data)
           end
 
           channel.on_extended_data do |_, __, data|
-            command_output.collect_stderr(data)
+            outcome.collect_stderr(data)
           end
 
           channel.on_request("exit-status") do |_, data|
-            command_output.exit_status = data.read_long
+            outcome.exit_status = data.read_long
           end
 
           channel.on_request("exit-signal") do |_, data|
-            command_output.exit_signal = data.read_string
+            outcome.exit_signal = data.read_string
           end
 
           channel.on_open_failed do |_, code, reason|
-            command_output.connection_failed(code, reason)
+            outcome.connection_failed(code, reason)
           end
 
           channel.on_close do |_|
-            command_output.command_finished!
+            outcome.command_finished!
           end
         end
 
@@ -159,10 +159,10 @@ module Warg
 
       connection.loop
 
-      command_output
+      outcome
     rescue SocketError, Errno::ECONNREFUSED, Net::SSH::AuthenticationFailed => error
-      command_output.connection_failed(-1, error.message)
-      command_output
+      outcome.connection_failed(-1, error.message)
+      outcome
     end
 
     def run_script(script, &callback)
@@ -254,7 +254,7 @@ module Warg
       @id = Digest::SHA1.hexdigest(@uri.to_s)
     end
 
-    class CommandOutput
+    class CommandOutcome
       attr_reader :command
       attr_reader :connection_error_code
       attr_reader :connection_error_reason
@@ -280,7 +280,7 @@ module Warg
         @started_at = nil
         @finished_at = nil
 
-        @failure_callback = ->(failure_reason, output) {}
+        @failure_callback = ->(failure_reason, outcome) {}
       end
 
       def collect_stdout(data)
