@@ -18,7 +18,6 @@ Gem::Specification.new do |s|
   s.bindir = "bin"
   s.executables = ["hodor"]
 
-  s.add_dependency "concurrent-ruby"
   s.add_dependency "net-ssh"
   s.add_dependency "net-scp"
 

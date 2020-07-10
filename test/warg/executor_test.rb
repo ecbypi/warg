@@ -1,5 +1,4 @@
 require "test_helper"
-require "concurrent/array"
 
 class WargExecutorTest < Minitest::Test
   def test_parallel_execution
@@ -9,7 +8,8 @@ class WargExecutorTest < Minitest::Test
     ]
 
     executor = Warg::Executor.for(:parallel).new(hosts)
-    results = Concurrent::Array.new
+    results = []
+    mutex = Mutex.new
 
     executor.run do |host|
       if host.address == "localhost"
@@ -18,7 +18,9 @@ class WargExecutorTest < Minitest::Test
         sleep 0.3
       end
 
-      results << host.address
+      mutex.synchronize do
+        results << host.address
+      end
     end
 
     # `localhost` appears second because we wait for it to complete longer than `warg-testing`.
@@ -33,7 +35,7 @@ class WargExecutorTest < Minitest::Test
     ]
 
     executor = Warg::Executor.for(:serial).new(hosts)
-    results = Concurrent::Array.new
+    results = []
 
     executor.run do |host|
       if host.address == "localhost"
@@ -51,15 +53,17 @@ class WargExecutorTest < Minitest::Test
 
   def test_registering_custom_strategies
     Warg::Executor.register :every_other_parallel do |&procedure|
-      host_promises = hosts.each_with_index.map do |host, index|
+      host_threads = hosts.each_with_index.map do |host, index|
         if index.even?
-          Concurrent::Promise.execute do
+          Thread.new do
             procedure.call(host)
           end
         end
       end
 
-      Concurrent::Promise.zip(*host_promises.compact)
+      host_threads.each do |thread|
+        thread.join if thread
+      end
     end
 
     hosts = Warg::HostCollection.from [
@@ -69,7 +73,8 @@ class WargExecutorTest < Minitest::Test
     ]
 
     executor = Warg::Executor.for(:every_other_parallel).new(hosts)
-    results = Concurrent::Array.new
+    results = []
+    mutex = Mutex.new
 
     executor.run do |host|
       if host.address == "localhost"
@@ -78,7 +83,9 @@ class WargExecutorTest < Minitest::Test
         sleep 0.3
       end
 
-      results << host.address
+      mutex.synchronize do
+        results << host.address
+      end
     end
 
     # `localhost` is skipped and `warg-testing` appears second because we waited

@@ -4,7 +4,6 @@ require "digest/sha1"
 
 require "net/ssh"
 require "net/scp"
-require "concurrent/promise"
 
 module Warg
   class InvalidHostDataError < StandardError
@@ -794,7 +793,7 @@ module Warg
 
     def self.register(name, &block)
       strategy = Class.new(self)
-      strategy.define_method(:setup_promises, &block)
+      strategy.define_method(:in_order, &block)
 
       @strategies[name] = strategy
     end
@@ -807,35 +806,27 @@ module Warg
 
     # FIXME: error handling?
     def run(&block)
-      promise = setup_promises(&block)
-      promise.execute
-
-      if promise.value.nil? && promise.rejected?
-        raise promise.reason
-      end
-
-      promise.value
+      in_order(&block)
     end
 
-    def setup_promises(&block)
+    def in_order(&block)
       raise NotImplementedError
     end
 
     register :parallel do |&procedure|
-      host_promises = hosts.map do |host|
-        Concurrent::Promise.execute do
+      host_threads = hosts.map do |host|
+        Thread.new do
           procedure.call(host)
         end
       end
 
-      Concurrent::Promise.zip(*host_promises)
+      host_threads.each(&:join)
+      host_threads.map(&:value)
     end
 
     register :serial do |&procedure|
-      hosts.inject(Concurrent::Promise.fulfill([])) do |promise, host|
-        promise.then do |value|
-          value << procedure.call(host)
-        end
+      hosts.map do |host|
+        procedure.call(host)
       end
     end
   end
