@@ -9,8 +9,8 @@ class WargCommandTest < Minitest::Test
       end
 
       def configure_parser!
-        @context.parser.on("-u USER", "user to filter processes for") do |user|
-          @context.variables(:top) do |top|
+        parser.on("-u USER", "user to filter processes for") do |user|
+          context.variables(:top) do |top|
             top.user = user
           end
         end
@@ -30,7 +30,7 @@ class WargCommandTest < Minitest::Test
       include Warg::Command::Behavior
 
       def run
-        @context.chain_example.deposits << "first"
+        context.chain_example.deposits << "first"
       end
     end
 
@@ -38,7 +38,7 @@ class WargCommandTest < Minitest::Test
       include Warg::Command::Behavior
 
       def run
-        @context.chain_example.deposits << "second"
+        context.chain_example.deposits << "second"
       end
     end
 
@@ -48,9 +48,9 @@ class WargCommandTest < Minitest::Test
       def run
         # NOTE: `chain_example.other_commands` is only necessary because we can't access
         # `first_command` and `second_command` in the `run` method
-        chain(*@context.chain_example.other_commands)
+        chain(*context.chain_example.other_commands)
 
-        @context.chain_example.deposits << "third"
+        context.chain_example.deposits << "third"
       end
     end
 

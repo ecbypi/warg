@@ -645,10 +645,6 @@ module Warg
       super()
     end
 
-    def parse_options!
-      @parser.parse(@argv)
-    end
-
     def copy(config)
       config.hosts.each do |host|
         hosts.add(host)
@@ -944,11 +940,20 @@ module Warg
         end
       end
 
+      attr_reader :argv
+      attr_reader :context
+      attr_reader :hosts
+      attr_reader :parser
+
       def initialize(context)
         @context = context
 
+        @parser = @context.parser
+        @hosts = @context.hosts
+        @argv = @context.argv.dup
+
         configure_parser!
-        @context.parse_options!
+        parse_options!
       end
 
       def name
@@ -964,7 +969,7 @@ module Warg
       end
 
       def |(other)
-        other.(@context)
+        other.(context)
       end
 
       def chain(*others)
@@ -978,16 +983,20 @@ module Warg
       def configure_parser!
       end
 
+      def parse_options!
+        parser.parse(argv)
+      end
+
       def run_script(script_name = nil, order: :parallel, &callback)
         script_name ||= command_name.script
 
-        script = Script.new(script_name, @context)
+        script = Script.new(script_name, context)
 
-        @context.hosts.run_script(script, order: order, &callback)
+        hosts.run_script(script, order: order, &callback)
       end
 
       def run_command(command, order: :parallel, &callback)
-        @context.hosts.run_command(command, order: order, &callback)
+        hosts.run_command(command, order: order, &callback)
       end
     end
 
