@@ -585,6 +585,10 @@ module Warg
         raise NotImplementedError
       end
 
+      def defined?(property_name)
+        @properties.include?(property_name)
+      end
+
       def define!(property_name)
         @properties << property_name.to_s
       end
