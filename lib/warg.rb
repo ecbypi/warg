@@ -117,6 +117,12 @@ module Warg
       value
     end
 
+    def ==(other)
+      self.class == other.class && uri == other.uri
+    end
+
+    alias eql? ==
+
     def run_command(command, &callback)
       outcome = CommandOutcome.new(self, command)
 
@@ -446,6 +452,16 @@ module Warg
       HostCollection.from(select { |host| host.matches?(**filters) })
     end
 
+    def ==(other)
+      self.class == other.class &&
+        length == other.length &&
+        # both are the same length and their intersection is the same length (all the same
+        # elements in common)
+        length == @hosts.&(other.hosts).length
+    end
+
+    alias eql? ==
+
     def length
       @hosts.length
     end
@@ -499,6 +515,10 @@ module Warg
     def to_a
       @hosts.dup
     end
+
+    protected
+
+    attr_reader :hosts
   end
 
   class Config

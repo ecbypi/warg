@@ -130,6 +130,24 @@ class WargHostCollectionTest < Minitest::Test
     ]
   end
 
+  def test_equality_matches_other_collection_objects_only_with_the_same_items_in_any_order
+    hosts = Warg::HostCollection.from [
+      "lenny@localhost",
+      "princess@otherhost"
+    ]
+
+    other_hosts = Warg::HostCollection.from [
+      "princess@otherhost",
+      "lenny@localhost"
+    ]
+
+    assert_equal hosts, other_hosts
+
+    other_hosts.add "kyle@lasthost"
+
+    refute_equal hosts, other_hosts
+  end
+
   def test_uploading_and_downloading_files
     hosts = Warg::HostCollection.from("warg-testing")
 

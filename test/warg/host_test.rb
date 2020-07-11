@@ -61,6 +61,18 @@ class WargHostTest < Minitest::Test
     assert_equal "ssh://localhost?environment=hippa", host.to_s
   end
 
+  def test_equality_matches_other_host_objects_only_with_the_same_uri
+    host = Warg::Host.new(address: "localhost")
+    other_host = Warg::Host.new(address: "localhost")
+
+    assert_equal host, other_host
+
+    host["stage"] = "production"
+
+    refute_equal host, other_host
+    refute_equal host, host.uri
+  end
+
   def test_uploading_and_downloading_files
     host = Warg::Host.new(address: "warg-testing")
 
