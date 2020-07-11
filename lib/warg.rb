@@ -495,13 +495,13 @@ module Warg
     end
 
     def run_script(script, order: :parallel, &callback)
-      run(order: order) do |host|
+      run_tracking_result(order: order) do |host|
         host.run_script(script, &callback)
       end
     end
 
     def run_command(command, order: :parallel, &callback)
-      run(order: order) do |host|
+      run_tracking_result(order: order) do |host|
         host.run_command(command, &callback)
       end
     end
@@ -519,6 +519,16 @@ module Warg
     protected
 
     attr_reader :hosts
+
+    private
+
+    def run_tracking_result(order:, &block)
+      run(order: order) do |host, result|
+        execution_result = block.call(host)
+        result.update execution_result.successful?
+        execution_result
+      end
+    end
   end
 
   class Config
@@ -815,14 +825,17 @@ module Warg
     end
 
     attr_reader :hosts
+    attr_reader :result
 
     def initialize(hosts)
       @hosts = hosts
+      @result = Result.new
     end
 
     # FIXME: error handling?
     def run(&block)
-      in_order(&block)
+      result.value = in_order(&block)
+      result
     end
 
     def in_order(&block)
@@ -832,7 +845,7 @@ module Warg
     register :parallel do |&procedure|
       host_threads = hosts.map do |host|
         Thread.new do
-          procedure.call(host)
+          procedure.call(host, result)
         end
       end
 
@@ -842,7 +855,39 @@ module Warg
 
     register :serial do |&procedure|
       hosts.map do |host|
-        procedure.call(host)
+        procedure.call(host, result)
+      end
+    end
+
+    class Result
+      include Enumerable
+      extend Forwardable
+
+      def_delegator :value, :each
+
+      attr_accessor :value
+
+      def initialize
+        @mutex = Mutex.new
+        @successful = true
+      end
+
+      def update(value)
+        @mutex.synchronize do
+          @successful &&= !!value
+        end
+      end
+
+      def successful?
+        @mutex.synchronize do
+          @successful
+        end
+      end
+
+      def failed?
+        @mutex.synchronize do
+          not @successful
+        end
       end
     end
   end
