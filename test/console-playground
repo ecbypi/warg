@@ -1,0 +1,46 @@
+#!/usr/bin/env ruby
+
+$:.unshift(File.expand_path(File.join("..", "..", "lib"), __FILE__))
+
+require "byebug"
+require "pry"
+
+require "set"
+require "warg"
+
+console = Warg::Console.new
+
+ctpa_town = Warg::Host.from("randy@ctpa-town.com")
+sodo_sopa = Warg::Host.from("loo@sodo-sopa.com")
+nomo_auchi = Warg::Host.from("pc@nomo-auchi.com")
+
+Warg::Console.hostname_width = [ctpa_town, sodo_sopa, nomo_auchi].map { |host| host.address.length }.max
+
+host_line_1 = Warg::Console::HostStatus.new(ctpa_town, console)
+
+sleep 2
+
+host_line_2 = Warg::Console::HostStatus.new(sodo_sopa, console)
+
+sleep 2
+
+host_line_1.started!
+
+sleep 2
+
+host_line_3 = Warg::Console::HostStatus.new(nomo_auchi, console)
+
+sleep 2
+
+host_line_2.failed! <<~CONTENT
+STDOUT: (none)
+STDERR: unbound variable `$der'
+CONTENT
+
+sleep 2
+
+host_line_3.success!
+
+sleep 2
+
+host_line_1.success!

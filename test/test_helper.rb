@@ -17,7 +17,15 @@ require "minitest/autorun"
 require "minitest/pride"
 require "warg"
 
+# Restore `$stdout` and `$stderr` from `Warg::Console::IOProxy`'s setup in
+# `Warg::Console#initialize`
+$stdout = STDOUT
+$stderr = STDERR
+
 module Warg
+  # Redirect console output to a `StringIO` instance. Prevents disrupting minitest output.
+  console.instance_variable_set(:@io, StringIO.new)
+
   module Testing
     module_function
 

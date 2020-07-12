@@ -16,6 +16,378 @@ module Warg
     end
   end
 
+  class Console
+    class << self
+      attr_accessor :hostname_width
+    end
+
+    def initialize
+      @io = $stdout
+      @history = History.new
+      @cursor_position = CursorPosition.new
+      @mutex = Mutex.new
+
+      $stdout = IOProxy.new($stdout, self)
+      $stderr = IOProxy.new($stderr, self)
+    end
+
+    def print(string)
+      print_content Content.new(string, self)
+    end
+
+    def puts(string)
+      print_content Content.new("#{string}\n", self)
+    end
+
+    def print_content(content)
+      @mutex.synchronize do
+        @io.print content.to_s
+
+        @history.append(content, row_number: @cursor_position.row)
+        @cursor_position.advance(content.row_count)
+
+        content
+      end
+    end
+
+    def reprint_content(content)
+      @mutex.lock
+
+      history_entry = @history.find_entry_for(content)
+
+      rows_from_cursor_row_to_content_start = @cursor_position.row - history_entry.row_number
+      rows_from_cursor_row_to_content_end = rows_from_cursor_row_to_content_start - history_entry.row_count
+
+      # move to line below the end of the content
+      # skip if the nu
+      unless rows_from_cursor_row_to_content_end.zero?
+        @io.print "\e[#{rows_from_cursor_row_to_content_end}A"
+      end
+
+      # move ot first column of that line
+      @io.print "\e[1G"
+
+      # erase each line of the ouptut one by one moving up a line each time
+      history_entry.row_count.times do
+        # move up one line
+        @io.print "\e[1A"
+        # erase that line
+        @io.print "\e[2K"
+      end
+
+      content.to_s.each_line do |line|
+        # erase the line (again if on the first line)
+        @io.print "\e[2K"
+
+        # print the line
+        @io.print line
+      end
+
+      if history_entry.row_count_changed?
+        # go through all subsequent entries and...
+        next_entry = history_entry.next_entry
+
+        until next_entry.nil?
+          # increment it's row number for if we reprint that content
+          next_entry.row_number += history_entry.row_count_diff
+
+          # print the content
+          next_entry.to_s.each_line do |line|
+            @io.print "\e[2K"
+            @io.print line
+          end
+
+          # get the next entry to repeat
+          next_entry = next_entry.next_entry
+        end
+
+        @cursor_position.advance(history_entry.row_count_diff)
+      elsif rows_from_cursor_row_to_content_end > 0
+        # Back to previous position
+        @io.print "\e[#{rows_from_cursor_row_to_content_end}B"
+        @io.print "\e[1G"
+      end
+
+      @mutex.unlock
+    end
+
+    class IOProxy < SimpleDelegator
+      def initialize(io, console)
+        @io = io
+        @console = console
+        __setobj__ @io
+      end
+
+      def print(content = nil)
+        @console.print(content)
+      end
+
+      def puts(content = nil)
+        @console.puts(content)
+      end
+    end
+
+    class CursorPosition
+      attr_reader :column
+      attr_reader :row
+
+      def initialize
+        @column = 0
+        @row = 0
+      end
+
+      def advance(row_count)
+        @row += row_count
+      end
+    end
+
+    class History
+      def initialize
+        @head = FirstEntry.new
+      end
+
+      def append(content, row_number:)
+        entry = Entry.new(content, row_number)
+
+        entry.previous_entry = @head
+        @head.next_entry     = entry
+
+        @head = entry
+      end
+
+      def find_entry_for(content)
+        current_entry = @head
+
+        until current_entry.previous_entry.nil? || current_entry.content == content
+          current_entry = current_entry.previous_entry
+        end
+
+        current_entry
+      end
+
+      class FirstEntry
+        attr_reader :content
+        attr_accessor :next_entry
+        attr_reader :previous_entry
+
+        def row_number
+          0
+        end
+
+        def row_count
+          0
+        end
+
+        def row_count_changed?
+          false
+        end
+
+        def to_s
+          ""
+        end
+      end
+
+      class Entry
+        attr_reader :content
+        attr_accessor :next_entry
+        attr_accessor :previous_entry
+        attr_reader :row_count
+        attr_accessor :row_number
+
+        def initialize(content, row_number)
+          @content = content
+          @row_number = row_number
+          @row_count = @content.row_count
+        end
+
+        def row_count_changed?
+          @row_count != @content.row_count
+        end
+
+        def row_count_diff
+          @content.row_count - @row_count
+        end
+
+        def to_s
+          @content.to_s
+        end
+      end
+    end
+
+    module TextRendering
+      def SGR(text)
+        Renderer.new(text)
+      end
+
+      class Renderer
+        def initialize(text)
+          @text = text
+          @select_graphic_rendition = SelectGraphicRendition.new
+        end
+
+        def with(**options)
+          @select_graphic_rendition = @select_graphic_rendition.modify(options)
+          self
+        end
+
+        def to_s
+          @select_graphic_rendition.(@text)
+        end
+
+        def to_str
+          to_s
+        end
+      end
+    end
+
+    include TextRendering
+
+    class Content
+      include TextRendering
+
+      def initialize(content, console)
+        @content = content.freeze
+        @console = console
+      end
+
+      def content=(value)
+        @content = value.freeze
+        @console.reprint_content(self)
+        value
+      end
+
+      def row_count
+        @content.each_line.count
+      end
+
+      def to_s
+        @content
+      end
+    end
+
+    class HostStatus
+      include TextRendering
+
+      attr_accessor :row_number
+
+      def initialize(host, console)
+        @host = host
+        @console = console
+
+        @hostname = host.address
+        @state = SGR("STARTING").with(text_color: :cyan)
+        @failure_message = ""
+
+        @console.print_content self
+      end
+
+      def row_count
+        1 + @failure_message.each_line.count
+      end
+
+      def started!
+        @state = SGR("RUNNING").with(text_color: :magenta)
+
+        @console.reprint_content(self)
+      end
+
+      def failed!(failure_message = "")
+        @state = SGR("FAILED").with(text_color: :red, effect: :bold)
+        @failure_message = failure_message.to_s
+
+        @console.reprint_content(self)
+      end
+
+      def success!
+        @state = SGR("DONE").with(text_color: :green)
+
+        @console.reprint_content(self)
+      end
+
+      def to_s
+        content = "  %-#{Console.hostname_width}s\t[ %s ]\n" % [@hostname, @state]
+
+        unless @failure_message.empty?
+          indented_failure_message = @failure_message.each_line.
+            map { |line| line.prepend("    ") }.
+            join
+
+          content << SGR(indented_failure_message).with(text_color: :yellow)
+        end
+
+        content
+      end
+    end
+
+    class SelectGraphicRendition
+      TEXT_COLORS = {
+        "red"     => "31",
+        "green"   => "32",
+        "yellow"  => "33",
+        "blue"    => "34",
+        "magenta" => "35",
+        "cyan"    => "36",
+        "white"   => "37",
+      }
+
+      BACKGROUND_COLORS = TEXT_COLORS.map { |name, value| [name, (value.to_i + 10).to_s] }.to_h
+
+      EFFECTS = {
+        "bold"          => "1",
+        "faint"         => "2",
+        "italic"        => "3",
+        "underline"     => "4",
+        "blink_slow"    => "5",
+        "blink_fast"    => "6",
+        "invert_colors" => "7",
+        "hide"          => "8",
+        "strikethrough" => "9"
+      }
+
+      def initialize(text_color: "0", background_color: "0", effect: "0")
+        @text_color = TEXT_COLORS.fetch(text_color.to_s, text_color)
+        @background_color = BACKGROUND_COLORS.fetch(background_color.to_s, background_color)
+        @effect = EFFECTS.fetch(effect.to_s, effect)
+      end
+
+      def call(text)
+        "#{self}#{text}#{RESET}"
+      end
+
+      def wrap(text)
+        call(text)
+      end
+
+      def modify(**attrs)
+        self.class.new(to_h.merge(attrs))
+      end
+
+      def |(other)
+        self.class.new(to_h.merge(other.to_h))
+      end
+
+      def to_str
+        "\e[#{@background_color};#{@effect};#{@text_color}m"
+      end
+
+      def to_s
+        to_str
+      end
+
+      def to_h
+        {
+          text_color: @text_color,
+          background_color: @background_color,
+          effect: @effect
+        }
+      end
+
+      RESET = new
+    end
+
+    SGR = SelectGraphicRendition
+  end
+
   class Host
     module Parser
       module_function
@@ -263,6 +635,7 @@ module Warg
       attr_reader :command
       attr_reader :connection_error_code
       attr_reader :connection_error_reason
+      attr_reader :console_state
       attr_reader :exit_signal
       attr_reader :exit_status
       attr_reader :failure_reason
@@ -272,9 +645,13 @@ module Warg
       attr_reader :stderr
       attr_reader :stdout
 
+      include Console::TextRendering
+
       def initialize(host, command)
         @host = host
         @command = command
+
+        @console_status = Console::HostStatus.new(host, Warg.console)
 
         @stdout = ""
         @stdout_callback = ->(data, host) {}
@@ -318,8 +695,12 @@ module Warg
         !successful?
       end
 
+      def started?
+        not @finished_at.nil?
+      end
+
       def finished?
-        !@finished_at.nil?
+        not @finished_at.nil?
       end
 
       def exit_status=(value)
@@ -329,7 +710,7 @@ module Warg
           @exit_status = value
 
           if failed?
-            failed! :nonzero_exit_status
+            @failure_reason = :nonzero_exit_status
           end
         end
 
@@ -340,12 +721,10 @@ module Warg
         if finished?
           $stderr.puts "[WARN] cannot change `#exit_signal` after command has finished"
         else
-          @failure_reason = :exit_signal
-
           @exit_signal = value
           @exit_signal.freeze
 
-          failed! :exit_signal
+          @failure_reason = :exit_signal
         end
 
         value
@@ -363,6 +742,8 @@ module Warg
         else
           @started_at = Time.now
           @started_at.freeze
+
+          @console_status.started!
         end
       end
 
@@ -375,6 +756,13 @@ module Warg
 
           @finished_at = Time.now
           @finished_at.freeze
+
+          if successful?
+            @console_status.success!
+          else
+            @console_status.failed!(failure_summary)
+            @failure_callback.(failure_reason, host, self)
+          end
         end
       end
 
@@ -382,14 +770,38 @@ module Warg
         @connection_error_code = code.freeze
         @connection_error_reason = reason.freeze
 
-        failed! :connection_error
+        @failure_reason = :connection_error
+
+        unless started?
+          @console_status.failed!(failure_summary)
+          @failure_callback.(failure_reason, host, self)
+        end
       end
 
-      private
+      def failure_summary
+        case failure_reason
+        when :exit_signal, :nonzero_exit_status
+          adjusted_stdout, adjusted_stderr = [stdout, stderr].map do |output|
+            adjusted = output.each_line.map { |line| line.prepend("  ") }.join.chomp
 
-      def failed!(reason)
-        @failure_reason = reason
-        @failure_callback.(@failure_reason, host, self)
+            if adjusted.empty?
+              adjusted = "(empty)"
+            end
+
+            adjusted
+          end
+
+          <<~OUTPUT
+            STDOUT: #{adjusted_stdout}
+            STDERR: #{adjusted_stderr}
+          OUTPUT
+        when :connection_error
+          <<~OUTPUT
+            Connection failed:
+              Code: #{connection_error_code}
+              Reason: #{connection_error_reason}
+          OUTPUT
+        end
       end
     end
   end
@@ -495,13 +907,13 @@ module Warg
     end
 
     def run_script(script, order: :parallel, &callback)
-      run_tracking_result(order: order) do |host|
+      run(order: order) do |host|
         host.run_script(script, &callback)
       end
     end
 
     def run_command(command, order: :parallel, &callback)
-      run_tracking_result(order: order) do |host|
+      run(order: order) do |host|
         host.run_command(command, &callback)
       end
     end
@@ -519,16 +931,6 @@ module Warg
     protected
 
     attr_reader :hosts
-
-    private
-
-    def run_tracking_result(order:, &block)
-      run(order: order) do |host, result|
-        execution_result = block.call(host)
-        result.update execution_result.successful?
-        execution_result
-      end
-    end
   end
 
   class Config
@@ -991,6 +1393,8 @@ module Warg
     end
 
     module Behavior
+      include Console::TextRendering
+
       def self.included(klass)
         klass.extend(ClassMethods)
       end
@@ -1000,7 +1404,7 @@ module Warg
 
         def call(context)
           command = new(context)
-          command.run
+          command.call
           command
         end
 
@@ -1027,6 +1431,14 @@ module Warg
 
       def name
         command_name.cli
+      end
+
+      def call
+        Warg.console.puts SGR("[#{name}]").with(text_color: :blue, effect: :bold)
+
+        run
+
+        self
       end
 
       def run
@@ -1058,14 +1470,25 @@ module Warg
 
       def run_script(script_name = nil, order: :parallel, &callback)
         script_name ||= command_name.script
-
         script = Script.new(script_name, context)
 
-        hosts.run_script(script, order: order, &callback)
+        execute(:script, script, order: order, &callback)
       end
 
       def run_command(command, order: :parallel, &callback)
-        hosts.run_command(command, order: order, &callback)
+        execute(:command, command, order: order, &callback)
+      end
+
+      def execute(run_type, command_or_script, order:, &callback)
+        Console.hostname_width = hosts.map { |host| host.address.length }.max
+
+        Warg.console.puts SGR(" -> #{command_or_script}").with(text_color: :magenta)
+
+        hosts.run(order: order) do |host, result|
+          outcome = host.public_send("run_#{run_type}", command_or_script, &callback)
+          result.update outcome.successful?
+          outcome
+        end
       end
     end
 
@@ -1217,6 +1640,10 @@ module Warg
       @remote_path = REMOTE_DIRECTORY.join(local_path)
     end
 
+    def name
+      @remote_path.relative_path_from(REMOTE_DIRECTORY).to_s
+    end
+
     def install_directory
       @remote_path.dirname
     end
@@ -1224,14 +1651,20 @@ module Warg
     def install_path
       @remote_path.relative_path_from("$HOME")
     end
+
+    def to_s
+      name.dup
+    end
   end
 
   class << self
     attr_reader :config
+    attr_reader :console
     attr_reader :search_paths
   end
 
   @config = Config.new
+  @console = Console.new
   @search_paths = []
 
   def self.configure

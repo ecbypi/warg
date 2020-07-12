@@ -4,6 +4,7 @@ class WargCommandTest < Minitest::Test
   def test_defining_parser_options
     top_command = Class.new do
       include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "top")
 
       def run
       end
@@ -28,6 +29,7 @@ class WargCommandTest < Minitest::Test
   def test_chaining_commands
     first_command = Class.new do
       include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "first")
 
       def run
         context.chain_example.deposits << "first"
@@ -36,6 +38,7 @@ class WargCommandTest < Minitest::Test
 
     second_command = Class.new do
       include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "second")
 
       def run
         context.chain_example.deposits << "second"
@@ -44,6 +47,7 @@ class WargCommandTest < Minitest::Test
 
     third_command = Class.new do
       include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "third")
 
       def run
         # NOTE: `chain_example.other_commands` is only necessary because we can't access
