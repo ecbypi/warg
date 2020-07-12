@@ -907,14 +907,14 @@ module Warg
     end
 
     def run_script(script, order: :parallel, &callback)
-      run(order: order) do |host|
-        host.run_script(script, &callback)
+      run(order: order) do |host, result|
+        result.update host.run_script(script, &callback)
       end
     end
 
     def run_command(command, order: :parallel, &callback)
-      run(order: order) do |host|
-        host.run_command(command, &callback)
+      run(order: order) do |host, result|
+        result.update host.run_command(command, &callback)
       end
     end
 
@@ -1240,7 +1240,7 @@ module Warg
 
     # FIXME: error handling?
     def run(&block)
-      result.value = in_order(&block)
+      in_order(&block)
       result
     end
 
@@ -1256,11 +1256,10 @@ module Warg
       end
 
       host_threads.each(&:join)
-      host_threads.map(&:value)
     end
 
     register :serial do |&procedure|
-      hosts.map do |host|
+      hosts.each do |host|
         procedure.call(host, result)
       end
     end
@@ -1271,16 +1270,18 @@ module Warg
 
       def_delegator :value, :each
 
-      attr_accessor :value
+      attr_reader :value
 
       def initialize
         @mutex = Mutex.new
         @successful = true
+        @value = []
       end
 
-      def update(value)
+      def update(command_outcome)
         @mutex.synchronize do
-          @successful &&= !!value
+          @value << command_outcome
+          @successful &&= command_outcome.successful?
         end
       end
 
@@ -1485,9 +1486,7 @@ module Warg
         Warg.console.puts SGR(" -> #{command_or_script}").with(text_color: :magenta)
 
         hosts.run(order: order) do |host, result|
-          outcome = host.public_send("run_#{run_type}", command_or_script, &callback)
-          result.update outcome.successful?
-          outcome
+          result.update host.public_send("run_#{run_type}", command_or_script, &callback)
         end
       end
     end
