@@ -661,8 +661,6 @@ module Warg
 
         @started_at = nil
         @finished_at = nil
-
-        @failure_callback = ->(failure_reason, host, outcome) {}
       end
 
       def collect_stdout(data)
@@ -681,10 +679,6 @@ module Warg
 
       def on_stderr(&block)
         @stderr_callback = block
-      end
-
-      def on_failure(&block)
-        @failure_callback = block
       end
 
       def successful?
@@ -761,7 +755,6 @@ module Warg
             @console_status.success!
           else
             @console_status.failed!(failure_summary)
-            @failure_callback.(failure_reason, host, self)
           end
         end
       end
@@ -774,7 +767,6 @@ module Warg
 
         unless started?
           @console_status.failed!(failure_summary)
-          @failure_callback.(failure_reason, host, self)
         end
       end
 
@@ -1485,9 +1477,19 @@ module Warg
 
         Warg.console.puts SGR(" -> #{command_or_script}").with(text_color: :magenta)
 
-        hosts.run(order: order) do |host, result|
+        execution_result = hosts.run(order: order) do |host, result|
           result.update host.public_send("run_#{run_type}", command_or_script, &callback)
         end
+
+        if execution_result.failed?
+          on_failure(execution_result)
+        end
+
+        execution_result
+      end
+
+      def on_failure(execution_result)
+        exit 1
       end
     end
 

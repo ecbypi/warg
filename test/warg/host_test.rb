@@ -144,7 +144,7 @@ class WargHostTest < Minitest::Test
     assert_equal "this is on stdout".reverse + "this is on stderr", stderr
   end
 
-  def test_callbacks_for_command_failure_from_connection_errors
+  def test_outcome_for_command_failure_from_connection_errors
     # multiple hosts to test different reasons `Net::SSH.start` will fail
     hosts = [
       Warg::Host.new(address: "jub-jub", user: "vagrant"),    # no such host
@@ -152,14 +152,8 @@ class WargHostTest < Minitest::Test
       Warg::Host.new(address: "warg-testing", user: "chanel") # host exists, incorrect user
     ]
 
-    failure_count = 0
-
     socket_error_result, connection_refused_error_result, authentication_error_result = hosts.map do |host|
-      result = host.run_command "ls" do |host, command_outcome|
-        command_outcome.on_failure do |failure_reason, host, outcome|
-          failure_count += 1
-        end
-      end
+      result = host.run_command "ls"
 
       # common properties of all errors; place here to avoid repeating
       assert result.failed?
@@ -171,23 +165,15 @@ class WargHostTest < Minitest::Test
       result
     end
 
-    assert_equal 3, failure_count
-
     assert_match(/SocketError/, socket_error_result.connection_error_reason)
     assert_match(/Errno::ECONNREFUSED/, connection_refused_error_result.connection_error_reason)
     assert_match(/Net::SSH::AuthenticationFailed/, authentication_error_result.connection_error_reason)
   end
 
-  def test_callbacks_for_command_failure_from_nonzero_exit_status
+  def test_outcome_for_command_failure_from_nonzero_exit_status
     host = Warg::Host.from "vagrant@warg-testing"
 
-    failure_marker = nil
-
-    result = host.run_command "exit 37" do |host, command_outcome|
-      command_outcome.on_failure do |failure_reason, host, outcome|
-        failure_marker = "shwish"
-      end
-    end
+    result = host.run_command "exit 37"
 
     assert result.failed?
     refute result.successful?
@@ -198,14 +184,10 @@ class WargHostTest < Minitest::Test
     assert_nil result.exit_signal
 
     refute_nil result.duration
-
-    assert_equal "shwish", failure_marker
   end
 
-  def test_callbacks_for_command_failure_from_exit_signal
+  def test_outcome_for_command_failure_from_exit_signal
     host = Warg::Host.from "vagrant@warg-testing"
-
-    failure_marker = nil
 
     script_content = <<~SCRIPT
       #!/usr/bin/env bash
@@ -215,11 +197,7 @@ class WargHostTest < Minitest::Test
 
     script = Warg::Testing::TestScript.new(content: script_content, name: "test-exit-signal")
 
-    result = host.run_script script do |host, command_outcome|
-      command_outcome.on_failure do |failure_reason, host, outcome|
-        failure_marker = "bajoop"
-      end
-    end
+    result = host.run_script script
 
     assert result.failed?
     refute result.successful?
@@ -230,7 +208,5 @@ class WargHostTest < Minitest::Test
     assert_nil result.exit_status
 
     refute_nil result.duration
-
-    assert_equal "bajoop", failure_marker
   end
 end
