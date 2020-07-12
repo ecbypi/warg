@@ -123,25 +123,17 @@ class WargHostTest < Minitest::Test
     assert_equal "", rm_result.stderr
   end
 
-  def test_callbacks_for_stdout_and_stderr
+  def test_outcome_for_stdout_and_stderr
     host = Warg::Host.new(address: "nuba-nuba", user: "vagrant")
 
-    stdout, stderr = capture_io do
-      host.run_command %{printf "this is on stdout"} do |host, command_outcome|
-        command_outcome.on_stdout do |data, host|
-          $stderr.print data.reverse
-        end
-      end
+    stdout_outcome = host.run_command %{printf "this is on stdout"}
+    stderr_outcome = host.run_command %{1>&2 printf "this is on stderr"}
 
-      host.run_command %{1>&2 printf "this is on stderr"} do |host, command_outcome|
-        command_outcome.on_stderr do |data, host|
-          $stderr.print data
-        end
-      end
-    end
+    assert_equal "this is on stdout", stdout_outcome.stdout
+    assert_equal "", stdout_outcome.stderr
 
-    assert_equal "", stdout
-    assert_equal "this is on stdout".reverse + "this is on stderr", stderr
+    assert_equal "", stderr_outcome.stdout
+    assert_equal "this is on stderr", stderr_outcome.stderr
   end
 
   def test_outcome_for_command_failure_from_connection_errors

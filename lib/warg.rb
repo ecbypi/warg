@@ -498,10 +498,6 @@ module Warg
     def run_command(command, &callback)
       outcome = CommandOutcome.new(self, command)
 
-      if callback
-        callback.call(self, outcome)
-      end
-
       connection.open_channel do |channel|
         channel.exec(command) do |_, success|
           outcome.command_started!
@@ -535,6 +531,10 @@ module Warg
       end
 
       connection.loop
+
+      if callback
+        callback.(self, outcome)
+      end
 
       outcome
     rescue SocketError, Errno::ECONNREFUSED, Net::SSH::AuthenticationFailed => error
@@ -654,10 +654,7 @@ module Warg
         @console_status = Console::HostStatus.new(host, Warg.console)
 
         @stdout = ""
-        @stdout_callback = ->(data, host) {}
-
         @stderr = ""
-        @stderr_callback = ->(data, host) {}
 
         @started_at = nil
         @finished_at = nil
@@ -665,20 +662,10 @@ module Warg
 
       def collect_stdout(data)
         @stdout << data
-        @stdout_callback.(data, host)
       end
 
       def collect_stderr(data)
         @stderr << data
-        @stderr_callback.(data, host)
-      end
-
-      def on_stdout(&block)
-        @stdout_callback = block
-      end
-
-      def on_stderr(&block)
-        @stderr_callback = block
       end
 
       def successful?
