@@ -5,7 +5,10 @@ class WargRunnerTest < Minitest::Test
     runner = Warg::Runner.new %w( uptime -t warg@warg-testing )
 
     stdout, _ = capture_io do
-      runner.run
+      begin
+        runner.run
+      rescue SystemExit
+      end
     end
 
     # Settings from config in `spec/dummy`
@@ -25,6 +28,11 @@ class WargRunnerTest < Minitest::Test
     assert defined?(ProcessSnapshot)
 
     assert_match(/\d+:\d+:\d+\s+up/, stdout)
+
+    # Check that const_missing hook works to load commands referenced before they are defined
+    context = Warg::Context.new []
+
+    A::AB.(context) | B::BC | C::CDE | D::DEA
   end
 
   def test_prints_to_stderr_and_exits_when_command_isnt_found
@@ -51,7 +59,10 @@ class WargRunnerTest < Minitest::Test
     ProcessSnapshot.extend(Warg::Testing::CaptureStdout)
 
     stdout, _ = capture_io do
-      runner.run
+      begin
+        runner.run
+      rescue SystemExit
+      end
     end
 
     assert_match(/top - \d+:\d+:\d+\s+up/, stdout)

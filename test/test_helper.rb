@@ -47,8 +47,25 @@ module Warg
 
       Command.registry.each do |name, command|
         Command.registry.delete(name)
-        Object.send(:remove_const, command.name)
+
+        # Already removed
+        unless Object.const_defined?(command.name)
+          next
+        end
+
+        *parent_parts, command_module_name = command.name.split("::")
+
+        if parent_parts.empty?
+          parent_module = Object
+        else
+          parent_module_name = parent_parts.join("::")
+          parent_module = Object.const_get(parent_module_name)
+        end
+
+        parent_module.send(:remove_const, command_module_name)
       end
+
+      $LOADED_FEATURES.grep(/dummy/).each { |path| $LOADED_FEATURES.delete(path) }
     end
 
     class TestScript

@@ -3,7 +3,7 @@ require "test_helper"
 class WargCommandTest < Minitest::Test
   def test_defining_parser_options
     top_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "top")
 
       def run
@@ -29,7 +29,7 @@ class WargCommandTest < Minitest::Test
 
   def test_chaining_commands
     first_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "first")
 
       def run
@@ -38,7 +38,7 @@ class WargCommandTest < Minitest::Test
     end
 
     second_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "second")
 
       def run
@@ -47,7 +47,7 @@ class WargCommandTest < Minitest::Test
     end
 
     third_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "third")
 
       def run
@@ -82,7 +82,7 @@ class WargCommandTest < Minitest::Test
 
   def test_reporting_steps_run_locally
     localhost_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "local-user")
 
       def run
@@ -103,7 +103,7 @@ class WargCommandTest < Minitest::Test
 
   def test_capturing_errors_in_code_run_locally
     localhost_broken_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "broke")
 
       def run
@@ -135,7 +135,7 @@ class WargCommandTest < Minitest::Test
 
   def test_logs_progress_to_console
     log_test_command = Class.new do
-      include Warg::Command::Behavior
+      include Warg::Command::BehaviorWithoutRegistration
       @command_name = Warg::Command::Name.new(script_name: "who-we-are")
 
       def run

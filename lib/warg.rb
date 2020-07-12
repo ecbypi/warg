@@ -1400,7 +1400,7 @@ module Warg
     def load_commands!
       Warg.search_paths.each do |warg_path|
         Dir.glob(warg_path.join("commands", "**", "*.rb")).each do |command_path|
-          load command_path
+          require command_path
         end
       end
     end
@@ -1427,7 +1427,7 @@ module Warg
             else
               if object_name == object_names[-1]
                 object = Class.new do
-                  include Command::Behavior
+                  include Command::BehaviorWithoutRegistration
 
                   def run
                     run_script
@@ -1439,7 +1439,7 @@ module Warg
 
               namespace.const_set(object_name, object)
 
-              if object < Command::Behavior
+              if object < Command::BehaviorWithoutRegistration
                 Warg::Command.register(object)
               end
             end
@@ -1752,22 +1752,51 @@ module Warg
       end
     end
 
-    module Behavior
+    module CommandMissingHook
+      def const_missing(class_name)
+        loaded = false
+
+        command_name = Name.new(class_name: class_name.to_s)
+        path = "#{command_name.script.tr("-", "_")}.rb"
+
+        Warg.search_paths.each do |warg_path|
+          command_path = warg_path.join("commands", path)
+
+          if command_path.exist?
+            require command_path
+            loaded = true
+            break
+          end
+        end
+
+        if loaded
+          Object.const_get(class_name)
+        else
+          super
+        end
+      end
+    end
+
+    module Chaining
+      def |(other)
+        ChainCommand.new(self, other)
+      end
+    end
+
+    module BehaviorWithoutRegistration
       def self.included(klass)
         klass.extend(ClassMethods)
       end
 
       module ClassMethods
         include Naming
+        include Chaining
+        include CommandMissingHook
 
         def call(context)
           command = new(context)
           command.call
           command
-        end
-
-        def |(other)
-          ChainCommand.new(self, other)
         end
       end
 
@@ -1849,7 +1878,20 @@ module Warg
       end
     end
 
-    include Behavior
+    include BehaviorWithoutRegistration
+
+    module Behavior
+      def self.included(klass)
+        klass.send(:include, BehaviorWithoutRegistration)
+        Command.register(klass)
+      end
+
+      def self.extended(klass)
+        klass.extend(CommandMissingHook)
+        klass.extend(Naming)
+        klass.extend(Chaining)
+      end
+    end
   end
 
   class ChainCommand
