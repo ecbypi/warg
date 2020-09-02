@@ -46,10 +46,12 @@ module Warg
 
     def print(string)
       print_content Content.new(string, self)
+      nil
     end
 
     def puts(string)
       print_content Content.new("#{string}\n", self)
+      nil
     end
 
     def print_content(content)
