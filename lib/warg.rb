@@ -809,7 +809,7 @@ module Warg
 
     def self.from(value)
       case value
-      when String
+      when String, Host
         new.add(value)
       when HostCollection
         value

@@ -1,6 +1,13 @@
 require "test_helper"
 
 class WargHostCollectionTest < Minitest::Test
+  def test_from_wraps_instances_of_hosts
+    host = Warg::Host.from("julie@boots.com")
+    collection = Warg::HostCollection.from(host)
+
+    assert_equal uris_from(collection), ["ssh://julie@boots.com"]
+  end
+
   def test_from_creates_host_instances_from_strings
     collection = Warg::HostCollection.from("patni@double-a-batteries.com")
 
