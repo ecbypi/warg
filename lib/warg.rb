@@ -852,6 +852,14 @@ module Warg
       @hosts = []
     end
 
+    def one
+      if @hosts.empty?
+        raise "cannot pick a host from `#{inspect}'; collection is empty"
+      end
+
+      HostCollection.from @hosts.sample
+    end
+
     def add(host_data)
       @hosts << Host.from(host_data)
 
@@ -1467,23 +1475,23 @@ module Warg
         parser.parse(argv)
       end
 
-      def run_script(script_name = nil, order: :parallel, &callback)
+      def run_script(script_name = nil, on: hosts, order: :parallel, &callback)
         script_name ||= command_name.script
         script = Script.new(script_name, context)
 
         execute(:script, script, order: order, &callback)
       end
 
-      def run_command(command, order: :parallel, &callback)
+      def run_command(command, on: hosts, order: :parallel, &callback)
         execute(:command, command, order: order, &callback)
       end
 
-      def execute(run_type, command_or_script, order:, &callback)
-        Console.hostname_width = hosts.map { |host| host.address.length }.max
+      def execute(run_type, command_or_script, on: hosts, order:, &callback)
+        Console.hostname_width = on.map { |host| host.address.length }.max
 
         Warg.console.puts SGR(" -> #{command_or_script}").with(text_color: :magenta)
 
-        execution_result = hosts.run(order: order) do |host, result|
+        execution_result = on.run(order: order) do |host, result|
           result.update host.public_send("run_#{run_type}", command_or_script, &callback)
         end
 

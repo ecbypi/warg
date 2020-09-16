@@ -204,6 +204,27 @@ class WargHostCollectionTest < Minitest::Test
     assert_equal [""], rm_results.map(&:stderr)
   end
 
+  def test_one_picks_a_random_host
+    hosts = Warg::HostCollection.from [
+      "kourtney@otherhost",
+      "kim@localhost",
+      "khloe@localhost"
+    ]
+
+    one_host = hosts.one
+
+    assert_kind_of Warg::HostCollection, one_host
+    assert_equal 1, one_host.length
+  end
+
+  def test_one_raises_error_when_collection_is_empty
+    hosts = Warg::HostCollection.new
+
+    assert_raises RuntimeError do
+      hosts.one
+    end
+  end
+
   def uris_from(collection)
     collection.map(&:to_s)
   end
