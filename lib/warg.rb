@@ -767,7 +767,7 @@ module Warg
       end
 
       def started?
-        not @finished_at.nil?
+        not @started_at.nil?
       end
 
       def finished?
