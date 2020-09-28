@@ -403,6 +403,83 @@ module Warg
     SGR = SelectGraphicRendition
   end
 
+  class Localhost
+    def address
+      "localhost"
+    end
+
+    def run
+      outcome = CommandOutcome.new
+
+      begin
+        outcome.command_started!
+
+        yield
+      rescue => error
+        outcome.error = error
+      end
+
+      outcome.command_finished!
+      outcome
+    end
+
+    class CommandOutcome
+      attr_accessor :error
+
+      def initialize
+        @console_status = Console::HostStatus.new(LOCALHOST, Warg.console)
+        @started_at = nil
+        @finished_at = nil
+      end
+
+      def command_started!
+        @started_at = Time.now
+        @started_at.freeze
+
+        @console_status.started!
+      end
+
+      def command_finished!
+        @finished_at = Time.now
+        @finished_at.freeze
+
+        if successful?
+          @console_status.success!
+        else
+          @console_status.failed!(failure_summary)
+        end
+      end
+
+      def successful?
+        error.nil?
+      end
+
+      def failed?
+        !successful?
+      end
+
+      def started?
+        not @started_at.nil?
+      end
+
+      def finished?
+        not @finished_at.nil?
+      end
+
+      def duration
+        if @started_at && @finished_at
+          @finished_at - @started_at
+        end
+      end
+
+      def failure_summary
+        error && error.full_message
+      end
+    end
+  end
+
+  LOCALHOST = Localhost.new
+
   class Host
     module Parser
       module_function
@@ -1501,6 +1578,20 @@ module Warg
 
         execution_result
       end
+
+      def on_localhost(banner)
+        Warg.console.puts SGR(" -> #{banner}").with(text_color: :magenta)
+
+        execution_result = Executor::Result.new
+        execution_result.update LOCALHOST.run { yield }
+
+        if execution_result.failed?
+          on_failure(execution_result)
+        end
+
+        execution_result
+      end
+      alias locally on_localhost
 
       def on_failure(execution_result)
         exit 1

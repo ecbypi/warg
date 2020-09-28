@@ -78,4 +78,57 @@ class WargCommandTest < Minitest::Test
 
     assert_equal %w( first second first second first first second third ), context.chain_example.deposits
   end
+
+  def test_reporting_steps_run_locally
+    localhost_command = Class.new do
+      include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "local-user")
+
+      def run
+        on_localhost "whoami" do
+          context.variables(:locally) do |locally|
+            locally.user = `whoami`.chomp
+          end
+        end
+      end
+    end
+
+    context = Warg::Context.new %w( local-user )
+
+    localhost_command.(context)
+
+    assert_equal ENV["USER"], context.locally.user
+  end
+
+  def test_capturing_errors_in_code_run_locally
+    localhost_broken_command = Class.new do
+      include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "broke")
+
+      def run
+        context.variables(:locally) do |locally|
+          locally.failed = false
+        end
+
+        on_localhost "whoami" do
+          raise "nothing here"
+        end
+      end
+
+      def on_failure(execution_result)
+        outcome = execution_result.value[0]
+
+        context.variables(:locally) do |locally|
+          locally.failure = outcome.error
+        end
+      end
+    end
+
+    context = Warg::Context.new %w( broke )
+
+    localhost_broken_command.(context)
+
+    assert_kind_of RuntimeError, context.locally.failure
+    assert_equal "nothing here", context.locally.failure.message
+  end
 end
