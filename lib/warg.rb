@@ -142,6 +142,28 @@ module Warg
       end
     end
 
+    class Proxy
+      def initialize
+        @console = Warg.console
+        @history = []
+      end
+
+      def print(text)
+        @history << @console.print_content(text)
+      end
+
+      def puts(text)
+        @history << @console.print_content("#{text}\n")
+        nil
+      end
+
+      def clear
+        @history.each do |content|
+          content.value = ""
+        end
+      end
+    end
+
     class CursorPosition
       attr_reader :column
       attr_reader :row
@@ -260,23 +282,23 @@ module Warg
     class Content
       include TextRendering
 
-      def initialize(content, console)
+      def initialize(value, console)
         @content = content.freeze
         @console = console
       end
 
-      def content=(value)
-        @content = value.freeze
+      def value=(value)
+        @value = value.dup.freeze
         @console.reprint_content(self)
         value
       end
 
       def row_count
-        @content.each_line.count
+        @value.each_line.count
       end
 
       def to_s
-        @content
+        @value
       end
     end
 
@@ -1499,6 +1521,8 @@ module Warg
         @hosts = @context.hosts
         @argv = @context.argv.dup
 
+        @console = Console::Proxy.new
+
         configure_parser!
         parse_options!
       end
@@ -1508,9 +1532,9 @@ module Warg
       end
 
       def call
-        Warg.console.puts SGR("[#{name}]").with(text_color: :blue, effect: :bold)
+        console.puts SGR("[#{name}]").with(text_color: :blue, effect: :bold)
 
-        run
+        Warg.with_console(console) { run }
 
         self
       end
@@ -1765,6 +1789,14 @@ module Warg
 
   def self.configure
     yield config
+  end
+
+  def self.with_console(console)
+    @console, original_console = console, @console
+
+    yield
+  ensure
+    @console = original_console
   end
 
   def self.default_user
