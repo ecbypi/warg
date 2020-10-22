@@ -1071,7 +1071,7 @@ module Warg
       end
 
       def defined?(property_name)
-        @properties.include?(property_name)
+        @properties.include?(property_name.to_s)
       end
 
       def define!(property_name)
