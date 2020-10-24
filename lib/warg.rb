@@ -513,6 +513,38 @@ module Warg
       outcome
     end
 
+    def defer(command, banner, &block)
+      run_object = BlockProxy.new(banner, &block)
+      hosts = CollectionProxy.new
+
+      Executor::Deferred.new(command, run_object, hosts, :serial)
+    end
+
+    class BlockProxy
+      def initialize(banner, &block)
+        @banner = banner
+        @block = block
+      end
+
+      def to_s
+        @banner.dup
+      end
+
+      def to_proc
+        @block
+      end
+    end
+
+    class CollectionProxy
+      def run_block(run_object, **)
+        outcome = LOCALHOST.run(&run_object)
+
+        execution_result = Executor::Result.new
+        execution_result.update(outcome)
+        execution_result
+      end
+    end
+
     class CommandOutcome
       attr_accessor :error
 
@@ -520,6 +552,14 @@ module Warg
         @console_status = Console::HostStatus.new(LOCALHOST, Warg.console)
         @started_at = nil
         @finished_at = nil
+      end
+
+      def host
+        LOCALHOST
+      end
+
+      def value
+        self
       end
 
       def command_started!
@@ -681,7 +721,7 @@ module Warg
       inspect.hash
     end
 
-    def run_command(command, &callback)
+    def run_command(command)
       outcome = CommandOutcome.new(self, command)
 
       connection.open_channel do |channel|
@@ -718,22 +758,18 @@ module Warg
 
       connection.loop
 
-      if callback
-        callback.(self, outcome)
-      end
-
       outcome
     rescue SocketError, Errno::ECONNREFUSED, Net::SSH::AuthenticationFailed => error
       outcome.connection_failed(-1, "#{error.class}: #{error.message}")
       outcome
     end
 
-    def run_script(script, &callback)
+    def run_script(script)
       create_directory script.install_directory
 
       create_file_from script.content, path: script.install_path, mode: 0755
 
-      run_command(script.remote_path, &callback)
+      run_command(script.remote_path)
     end
 
     def create_directory(directory)
@@ -842,6 +878,10 @@ module Warg
 
         @started_at = nil
         @finished_at = nil
+      end
+
+      def value
+        self
       end
 
       def collect_stdout(data)
@@ -1077,15 +1117,15 @@ module Warg
       self
     end
 
-    def run_script(script, order: :parallel, &callback)
+    def run_script(script, order: :parallel)
       run(order: order) do |host, result|
-        result.update host.run_script(script, &callback)
+        result.update host.run_script(script)
       end
     end
 
-    def run_command(command, order: :parallel, &callback)
+    def run_command(command, order: :parallel)
       run(order: order) do |host, result|
-        result.update host.run_command(command, &callback)
+        result.update host.run_command(command)
       end
     end
 
@@ -1244,12 +1284,35 @@ module Warg
     def initialize(argv)
       @argv = argv
       @parser = OptionParser.new
+      @operations = Hash.new { |lists, command| lists[command] = [] }
 
       @parser.on("-t", "--target HOSTS", Array, "hosts to use") do |hosts_data|
         hosts_data.each { |host_data| hosts.add(host_data) }
       end
 
       super()
+    end
+
+    def append_operation!(command, deferred)
+      @operations[command] << deferred
+    end
+
+    def parse_options!
+      @parser.parse(@argv)
+    end
+
+    def run!
+      Console.hostname_width = hosts.map { |host| host.address.length }.max
+
+      @operations.each do |command, operations|
+        Warg.console.puts Console::SGR("[#{command.name}]").with(text_color: :blue, effect: :bold)
+
+        operations.each do |operation|
+          Warg.console.puts Console::SGR(" -> #{operation.banner}").with(text_color: :magenta)
+
+          operation.run
+        end
+      end
     end
 
     def copy(config)
@@ -1288,8 +1351,11 @@ module Warg
         exit 1
       end
 
+      @command.(@context)
+      @context.parse_options!
+
       Warg.console.redirecting_stdout_and_stderr do
-        @command.(@context)
+        @context.run!
       end
     end
 
@@ -1403,11 +1469,11 @@ module Warg
       @strategies[name] = strategy
     end
 
-    attr_reader :hosts
+    attr_reader :collection
     attr_reader :result
 
-    def initialize(hosts)
-      @hosts = hosts
+    def initialize(collection)
+      @collection = collection
       @result = Result.new
     end
 
@@ -1422,18 +1488,138 @@ module Warg
     end
 
     register :parallel do |&procedure|
-      host_threads = hosts.map do |host|
+      threads = collection.map do |object|
         Thread.new do
-          procedure.call(host, result)
+          procedure.call(object, result)
         end
       end
 
-      host_threads.each(&:join)
+      threads.each(&:join)
     end
 
     register :serial do |&procedure|
-      hosts.each do |host|
-        procedure.call(host, result)
+      collection.each do |object|
+        procedure.call(object, result)
+      end
+    end
+
+    class Deferred
+      def initialize(command, run_object, hosts, order)
+        @command = command
+        @run_object = run_object
+        @hosts = hosts
+        @order = order
+
+        @callbacks_queue = CallbacksQueue.new(order)
+
+        @run_type = case @run_object
+                    when Script
+                      :run_script
+                    when String
+                      :run_command
+                    when Localhost::BlockProxy
+                      :run_block
+                    end
+      end
+
+      def banner
+        @run_object
+      end
+
+      def and_then(&block)
+        @callbacks_queue << block
+        self
+      end
+
+      def run
+        execution_result = @hosts.public_send(@run_type, @run_object, order: @order)
+
+        execution_result = @callbacks_queue.drain(execution_result)
+
+        if execution_result.failed?
+          @command.on_failure(execution_result)
+        end
+
+        execution_result
+      end
+
+      class CallbacksQueue
+        def initialize(execution_order)
+          @queue = []
+          @executor_class = Executor.for(execution_order)
+        end
+
+        def <<(callback)
+          @queue << callback
+        end
+
+        def drain(execution_result)
+          drain_queue = @queue.dup
+
+          # NOTE: It would be nice to incorporate the failure callback into the code here
+          until drain_queue.empty? || execution_result.failed?
+            callback = drain_queue.shift
+            executor = @executor_class.new(execution_result)
+
+            execution_result = executor.run do |outcome, result|
+              callback_outcome = Outcome.new(outcome)
+
+              begin
+                # Use `||=` in case `#value` is set in the callback
+                callback_outcome.value ||= callback.(outcome.host, outcome.value, callback_outcome)
+              rescue => error
+                callback_outcome.error = error
+              end
+
+              result.update callback_outcome
+            end
+          end
+
+          execution_result
+        end
+
+        class Outcome
+          attr_reader :error
+          attr_reader :host
+          attr_reader :source_outcome
+          attr_accessor :value
+
+          def initialize(outcome)
+            @source_outcome = outcome
+            @host = @source_outcome.host
+            @successful = true
+          end
+
+          def resolve(value)
+            @value = value
+          end
+
+          def fail!(message)
+            @successful = false
+
+            raise CallbackFailedError.new(message)
+          end
+
+          def error=(error)
+            @successful = false
+            @error = error
+          end
+
+          def successful?
+            @successful
+          end
+
+          def failed?
+            !successful?
+          end
+
+          def failure_summary
+            error && error.full_message
+          end
+        end
+      end
+
+      class CallbackFailedError < StandardError
       end
     end
 
@@ -1451,10 +1637,10 @@ module Warg
         @value = []
       end
 
-      def update(command_outcome)
+      def update(outcome)
         @mutex.synchronize do
-          @value << command_outcome
-          @successful &&= command_outcome.successful?
+          @value << outcome
+          @successful &&= outcome.successful?
         end
       end
 
@@ -1588,6 +1774,7 @@ module Warg
       attr_reader :argv
       attr_reader :context
       attr_reader :hosts
+      attr_reader :operations
       attr_reader :parser
 
       def initialize(context)
@@ -1598,7 +1785,6 @@ module Warg
         @argv = @context.argv.dup
 
         configure_parser!
-        parse_options!
       end
 
       def name
@@ -1606,10 +1792,7 @@ module Warg
       end
 
       def call
-        Warg.console.puts SGR("[#{name}]").with(text_color: :blue, effect: :bold)
-
         run
-
         self
       end
 
@@ -1626,9 +1809,13 @@ module Warg
       end
 
       def chain(*others)
-        others.inject(self) do |execution, other|
-          execution | other
+        others.inject(self) do |execution, command|
+          execution | command
         end
+      end
+
+      def on_failure(execution_result)
+        exit 1
       end
 
       def SGR(text)
@@ -1640,53 +1827,25 @@ module Warg
       def configure_parser!
       end
 
-      def parse_options!
-        parser.parse(argv)
-      end
-
-      def run_script(script_name = nil, on: hosts, order: :parallel, &callback)
+      def run_script(script_name = nil, on: hosts, order: :parallel)
         script_name ||= command_name.script
         script = Script.new(script_name, context)
 
-        execute(:script, script, on: on, order: order, &callback)
+        append Executor::Deferred.new(self, script, on, order)
       end
 
-      def run_command(command, on: hosts, order: :parallel, &callback)
-        execute(:command, command, on: on, order: order, &callback)
+      def run_command(command, on: hosts, order: :parallel)
+        append Executor::Deferred.new(self, command, on, order)
       end
 
-      def execute(run_type, command_or_script, on: hosts, order:, &callback)
-        Console.hostname_width = on.map { |host| host.address.length }.max
-
-        Warg.console.puts SGR(" -> #{command_or_script}").with(text_color: :magenta)
-
-        execution_result = on.run(order: order) do |host, result|
-          result.update host.public_send("run_#{run_type}", command_or_script, &callback)
-        end
-
-        if execution_result.failed?
-          on_failure(execution_result)
-        end
-
-        execution_result
-      end
-
-      def on_localhost(banner)
-        Warg.console.puts SGR(" -> #{banner}").with(text_color: :magenta)
-
-        execution_result = Executor::Result.new
-        execution_result.update LOCALHOST.run { yield }
-
-        if execution_result.failed?
-          on_failure(execution_result)
-        end
-
-        execution_result
+      def on_localhost(banner, &block)
+        append LOCALHOST.defer(self, banner, &block)
       end
       alias locally on_localhost
 
-      def on_failure(execution_result)
-        exit 1
+      def append(deferred)
+        @context.append_operation!(self, deferred)
+        deferred
       end
     end
 
@@ -1821,25 +1980,25 @@ module Warg
     def initialize(script_name, context, defaults_path: nil)
       command_name = Command::Name.from_relative_script_path(script_name)
       @name = command_name.script
+      @context = context
 
       local_path = Pathname.new(@name)
 
       # FIXME: search parent directories for a defaults script
       defaults_path ||= File.join(local_path.dirname, "_defaults")
-      defaults = Template.find(defaults_path, fail_if_missing: false)
+      @defaults = Template.find(defaults_path, fail_if_missing: false)
 
-      interpolations = Interpolations.new(context)
-      interpolations["script_name"] = @name
-      interpolations["script_defaults"] = defaults.compile(interpolations).chomp
-
-      template = Template.find(local_path.to_s)
-      @content = template.compile(interpolations)
+      @template = Template.find(local_path.to_s)
 
       @remote_path = REMOTE_DIRECTORY.join(local_path)
     end
 
-    def name
-      @remote_path.relative_path_from(REMOTE_DIRECTORY).to_s
+    def content
+      interpolations = Interpolations.new(@context)
+      interpolations["script_name"] = name
+      interpolations["script_defaults"] = @defaults.compile(interpolations).chomp
+
+      @template.compile(interpolations)
     end
 
     def install_directory

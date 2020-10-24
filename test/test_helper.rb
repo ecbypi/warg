@@ -78,11 +78,9 @@ module Warg
           alias_method :default_run, :run
 
           def run
-            results = default_run
-
-            results.each do |result|
-              $stdout.puts result.stdout
-              $stderr.puts result.stderr
+            default_run.and_then do |host, outcome, resolver|
+              $stdout.puts outcome.stdout
+              $stderr.puts outcome.stderr
             end
           end
         RUN

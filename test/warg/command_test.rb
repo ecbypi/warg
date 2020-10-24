@@ -21,6 +21,7 @@ class WargCommandTest < Minitest::Test
     context = Warg::Context.new %w( top -u toby -t localhost )
 
     top_command.(context)
+    context.parse_options!
 
     assert_equal "toby", context.top.user
     assert_equal ["ssh://localhost"], context.hosts.map(&:to_s)
@@ -94,8 +95,8 @@ class WargCommandTest < Minitest::Test
     end
 
     context = Warg::Context.new %w( local-user )
-
     localhost_command.(context)
+    context.run!
 
     assert_equal ENV["USER"], context.locally.user
   end
@@ -125,8 +126,8 @@ class WargCommandTest < Minitest::Test
     end
 
     context = Warg::Context.new %w( broke )
-
     localhost_broken_command.(context)
+    context.run!
 
     assert_kind_of RuntimeError, context.locally.failure
     assert_equal "nothing here", context.locally.failure.message
@@ -144,7 +145,8 @@ class WargCommandTest < Minitest::Test
           end
         end
 
-        run_command "whoami", on: Warg::HostCollection.from(["warg-testing"]) do |host, result|
+        whoami = run_command "whoami", on: Warg::HostCollection.from(["warg-testing"])
+        whoami.and_then do |host, result|
           context.variables(:log_test) do |log_test|
             log_test.remote_user = result.stdout.chomp
           end
@@ -153,8 +155,8 @@ class WargCommandTest < Minitest::Test
     end
 
     context = Warg::Context.new %w( who-we-are )
-
     log_test_command.(context)
+    context.run!
 
     assert_equal ENV["USER"], context.log_test.local_user
     assert_equal "warg", context.log_test.remote_user

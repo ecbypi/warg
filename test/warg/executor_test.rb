@@ -53,7 +53,7 @@ class WargExecutorTest < Minitest::Test
 
   def test_registering_custom_strategies
     Warg::Executor.register :every_other_parallel do |&procedure|
-      host_threads = hosts.each_with_index.map do |host, index|
+      threads = collection.each_with_index.map do |host, index|
         if index.even?
           Thread.new do
             procedure.call(host)
@@ -61,7 +61,7 @@ class WargExecutorTest < Minitest::Test
         end
       end
 
-      host_threads.each do |thread|
+      threads.each do |thread|
         thread.join if thread
       end
     end
@@ -90,5 +90,83 @@ class WargExecutorTest < Minitest::Test
 
     # `localhost` is skipped and `warg-testing` appears second because we waited
     assert_equal ["nuba-nuba", "warg-testing"], results
+  end
+
+  def test_deferred_callbacks_ending_in_success
+    hosts = Warg::HostCollection.from ["warg-testing"]
+    command_class = Class.new do
+      def on_failure(execution_result)
+      end
+    end
+
+    deferred = Warg::Executor::Deferred.new(command_class.new, "uptime", hosts, :serial)
+
+    deferred.and_then do |host, result, outcome|
+      1 + 1
+    end
+
+    deferred.and_then do |host, result, outcome|
+      4 ** result
+    end
+
+    execution_result = deferred.run
+    outcome = execution_result.first
+
+    assert_equal 16, outcome.value
+    assert_nil outcome.error
+    assert outcome.successful?
+    refute outcome.failed?
+  end
+
+  def test_deferred_callbacks_ending_with_a_runtime_error
+    hosts = Warg::HostCollection.from ["warg-testing"]
+    command_class = Class.new do
+      def on_failure(execution_result)
+      end
+    end
+
+    deferred = Warg::Executor::Deferred.new(command_class.new, "uptime", hosts, :serial)
+
+    deferred.and_then do |host, result, outcome|
+      1 + 1
+    end
+
+    deferred.and_then do |host, result, outcome|
+      result / 0
+    end
+
+    deferred.and_then do |host, result, outcome|
+      raise "raising here to show this block is never reached"
+    end
+
+    execution_result = deferred.run
+    outcome = execution_result.first
+
+    assert_nil outcome.value
+    assert_kind_of ZeroDivisionError, outcome.error
+    refute outcome.successful?
+    assert outcome.failed?
+  end
+
+  def test_deferred_callbacks_ending_with_user_specified_error
+    hosts = Warg::HostCollection.from ["warg-testing"]
+    command_class = Class.new do
+      def on_failure(execution_result)
+      end
+    end
+
+    deferred = Warg::Executor::Deferred.new(command_class.new, "uptime", hosts, :serial)
+
+    deferred.and_then do |host, result, outcome|
+      outcome.fail! "quitting!"
+    end
+
+    execution_result = deferred.run
+    outcome = execution_result.first
+
+    assert_nil outcome.value
+    assert_kind_of Warg::Executor::Deferred::CallbackFailedError, outcome.error
+    refute outcome.successful?
+    assert outcome.failed?
   end
 end
