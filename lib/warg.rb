@@ -43,9 +43,16 @@ module Warg
       @history = History.new
       @cursor_position = CursorPosition.new
       @mutex = Mutex.new
+    end
 
+    def redirecting_stdout_and_stderr
       $stdout = IOProxy.new($stdout, self)
       $stderr = IOProxy.new($stderr, self)
+
+      yield
+    ensure
+      $stdout = $stdout.__getobj__
+      $stderr = $stderr.__getobj__
     end
 
     def puts(text_or_content = nil)
@@ -1269,7 +1276,9 @@ module Warg
         exit 1
       end
 
-      @command.(@context)
+      Warg.console.redirecting_stdout_and_stderr do
+        @command.(@context)
+      end
     end
 
     private

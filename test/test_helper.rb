@@ -98,9 +98,10 @@ module Warg
             original_initialize
 
             @io = StringIO.new
+          end
 
-            $stdout = STDOUT
-            $stderr = STDERR
+          def redirecting_stdout_and_stderr
+            yield
           end
 
           def output
