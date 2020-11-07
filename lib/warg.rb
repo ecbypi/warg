@@ -1556,11 +1556,11 @@ module Warg
         script_name ||= command_name.script
         script = Script.new(script_name, context)
 
-        execute(:script, script, order: order, &callback)
+        execute(:script, script, on: on, order: order, &callback)
       end
 
       def run_command(command, on: hosts, order: :parallel, &callback)
-        execute(:command, command, order: order, &callback)
+        execute(:command, command, on: on, order: order, &callback)
       end
 
       def execute(run_type, command_or_script, on: hosts, order:, &callback)
