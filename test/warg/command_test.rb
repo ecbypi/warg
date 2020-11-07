@@ -131,4 +131,40 @@ class WargCommandTest < Minitest::Test
     assert_kind_of RuntimeError, context.locally.failure
     assert_equal "nothing here", context.locally.failure.message
   end
+
+  def test_logs_progress_to_console
+    log_test_command = Class.new do
+      include Warg::Command::Behavior
+      @command_name = Warg::Command::Name.new(script_name: "who-we-are")
+
+      def run
+        locally "local step" do
+          context.variables(:log_test) do |log_test|
+            log_test.local_user = `whoami`.chomp
+          end
+        end
+
+        run_command "whoami", on: Warg::HostCollection.from(["warg-testing"]) do |host, result|
+          context.variables(:log_test) do |log_test|
+            log_test.remote_user = result.stdout.chomp
+          end
+        end
+      end
+    end
+
+    context = Warg::Context.new %w( who-we-are )
+
+    log_test_command.(context)
+
+    assert_equal ENV["USER"], context.log_test.local_user
+    assert_equal "warg", context.log_test.remote_user
+
+    assert_includes Warg.console.output, "who-we-are"
+
+    assert_includes Warg.console.output, "local step"
+    assert_includes Warg.console.output, "localhost"
+
+    assert_includes Warg.console.output, "whoami"
+    assert_includes Warg.console.output, "warg-testing"
+  end
 end

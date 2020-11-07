@@ -34,6 +34,10 @@ module Warg
       attr_accessor :hostname_width
     end
 
+    def self.SGR(text)
+      SelectGraphicRendition::Renderer.new(text)
+    end
+
     def initialize
       @io = $stdout
       @history = History.new
@@ -44,84 +48,100 @@ module Warg
       $stderr = IOProxy.new($stderr, self)
     end
 
-    def print(string)
-      print_content Content.new(string, self)
-      nil
+    def puts(text_or_content = nil)
+      content = print_content text_or_content
+
+      unless text_or_content.to_s.end_with?("\n")
+        print_content "\n"
+      end
+
+      content
     end
 
-    def puts(string)
-      print_content Content.new("#{string}\n", self)
-      nil
+    def print(text_or_content = nil)
+      print_content(text_or_content)
     end
 
-    def print_content(content)
+    def print_content(text_or_content)
+      content = case text_or_content
+                when Content, HostStatus
+                  text_or_content
+                else
+                  Content.new(text_or_content, self)
+                end
+
       @mutex.synchronize do
         @io.print content.to_s
 
-        @history.append(content, row_number: @cursor_position.row)
-        @cursor_position.advance(content.row_count)
+        @history.append(content, at: @cursor_position)
+        @cursor_position.adjust_to(content)
 
         content
       end
     end
 
+    # For CSI sequences, see:
+    # https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_output_sequences
     def reprint_content(content)
       @mutex.lock
 
       history_entry = @history.find_entry_for(content)
 
       rows_from_cursor_row_to_content_start = @cursor_position.row - history_entry.row_number
-      rows_from_cursor_row_to_content_end = rows_from_cursor_row_to_content_start - history_entry.row_count
 
-      # move to line below the end of the content
-      # skip if the nu
-      unless rows_from_cursor_row_to_content_end.zero?
-        @io.print "\e[#{rows_from_cursor_row_to_content_end}A"
-      end
+      # starting from the current line, clear the line and move up a line
+      #
+      # this will bring us to the line the content we're reprinting, clearing all lines beneath
+      # it
+      rows_from_cursor_row_to_content_start.times do
+        # clear the current line
+        @io.print "\e[2K"
 
-      # move ot first column of that line
-      @io.print "\e[1G"
-
-      # erase each line of the ouptut one by one moving up a line each time
-      history_entry.row_count.times do
-        # move up one line
+        # move up a line
         @io.print "\e[1A"
-        # erase that line
-        @io.print "\e[2K"
       end
 
-      content.to_s.each_line do |line|
-        # erase the line (again if on the first line)
-        @io.print "\e[2K"
+      # go to the column of the content
+      @io.print "\e[#{history_entry.column_number}G"
 
-        # print the line
-        @io.print line
-      end
+      # clear from the starting column of the content to the end of the line
+      @io.print "\e[0K"
 
-      if history_entry.row_count_changed?
-        # go through all subsequent entries and...
-        next_entry = history_entry.next_entry
+      # re-print the content from its original location
+      @io.print content.to_s
 
-        until next_entry.nil?
-          # increment it's row number for if we reprint that content
-          next_entry.row_number += history_entry.row_count_diff
+      # initialize how much we'll be adjusting the column number by
+      column_adjustment = history_entry.end_column
 
-          # print the content
-          next_entry.to_s.each_line do |line|
-            @io.print "\e[2K"
-            @io.print line
-          end
+      current_entry = history_entry
 
-          # get the next entry to repeat
-          next_entry = next_entry.next_entry
+      until current_entry.next_entry.nil?
+        next_entry = current_entry.next_entry
+
+        # we only update the column of subsequent entries if they were on the same line as the
+        # entry being reprinted.
+        if next_entry.row_number == history_entry.end_row
+          next_entry.column_number = column_adjustment
+          column_adjustment += next_entry.last_line_length
         end
 
-        @cursor_position.advance(history_entry.row_count_diff)
-      elsif rows_from_cursor_row_to_content_end > 0
-        # Back to previous position
-        @io.print "\e[#{rows_from_cursor_row_to_content_end}B"
-        @io.print "\e[1G"
+        # update the next entry's row number by how many rows the updated entry grew or shrank
+        next_entry.row_number += history_entry.newline_count_diff
+
+        # print the content
+        @io.print next_entry.to_s
+
+        # get the next entry to repeat
+        current_entry = next_entry
       end
+
+      # Update the cursor position by how many row's the new content has changed and the new
+      # end column of the last entry in the history
+      @cursor_position.column = current_entry.end_column
+      @cursor_position.row += history_entry.newline_count_diff
+
+      # reset `newline_count` and `last_line_length` to what they now are in `@content`
+      history_entry.sync!
 
       @mutex.unlock
     end
@@ -133,26 +153,51 @@ module Warg
         __setobj__ @io
       end
 
-      def print(content = nil)
-        @console.print(content)
+      def print(*texts)
+        texts.each do |text|
+          @console.print(text.to_s)
+        end
+
+        nil
       end
 
-      def puts(content = nil)
-        @console.puts(content)
+      def puts(*texts)
+        texts.each do |text|
+          @console.puts(text.to_s)
+        end
+
+        nil
+      end
+
+      def write(*texts)
+        texts.inject(0) do |count, text|
+          @console.print(text.to_s)
+
+          count + text.to_s.length
+        end
       end
     end
 
     class CursorPosition
-      attr_reader :column
-      attr_reader :row
+      attr_accessor :column
+      attr_accessor :row
 
       def initialize
-        @column = 0
-        @row = 0
+        @row = 1
+        @column = 1
       end
 
-      def advance(row_count)
-        @row += row_count
+      def adjust_to(content)
+        last_line_length = content.last_line_length
+        newline_count = content.newline_count
+
+        if newline_count > 0
+          @column = last_line_length + 1
+        else
+          @column += last_line_length
+        end
+
+        @row += newline_count
       end
     end
 
@@ -161,8 +206,8 @@ module Warg
         @head = FirstEntry.new
       end
 
-      def append(content, row_number:)
-        entry = Entry.new(content, row_number)
+      def append(content, at: cursor_position)
+        entry = Entry.new(content, at)
 
         entry.previous_entry = @head
         @head.next_entry     = entry
@@ -185,16 +230,20 @@ module Warg
         attr_accessor :next_entry
         attr_reader :previous_entry
 
+        def column_number
+          1
+        end
+
         def row_number
+          1
+        end
+
+        def newline_count
           0
         end
 
-        def row_count
+        def last_line_length
           0
-        end
-
-        def row_count_changed?
-          false
         end
 
         def to_s
@@ -203,86 +252,86 @@ module Warg
       end
 
       class Entry
+        attr_accessor :column_number
         attr_reader :content
+        attr_reader :last_line_length
         attr_accessor :next_entry
+        attr_reader :newline_count
         attr_accessor :previous_entry
-        attr_reader :row_count
         attr_accessor :row_number
 
-        def initialize(content, row_number)
+        def initialize(content, cursor_position)
           @content = content
-          @row_number = row_number
-          @row_count = @content.row_count
+
+          @row_number = cursor_position.row
+          @column_number = cursor_position.column
+
+          @text = @content.to_s
+          @newline_count = @content.newline_count
+          @last_line_length = @content.last_line_length
         end
 
-        def row_count_changed?
-          @row_count != @content.row_count
+        def sync!
+          @text = @content.to_s
+          @last_line_length = @content.last_line_length
         end
 
-        def row_count_diff
-          @content.row_count - @row_count
+        def newline_count_diff
+          @content.newline_count - @newline_count
+        end
+
+        def end_row
+          @row_number + newline_count
+        end
+
+        def end_column
+          value = 1 + @content.last_line_length
+
+          if newline_count.zero?
+            value += @column_number
+          end
+
+          value
         end
 
         def to_s
-          @content.to_s
+          @text.dup
         end
       end
     end
-
-    module TextRendering
-      def SGR(text)
-        Renderer.new(text)
-      end
-
-      class Renderer
-        def initialize(text)
-          @text = text
-          @select_graphic_rendition = SelectGraphicRendition.new
-        end
-
-        def with(**options)
-          @select_graphic_rendition = @select_graphic_rendition.modify(options)
-          self
-        end
-
-        def to_s
-          @select_graphic_rendition.(@text)
-        end
-
-        def to_str
-          to_s
-        end
-      end
-    end
-
-    include TextRendering
 
     class Content
-      include TextRendering
-
-      def initialize(content, console)
-        @content = content.freeze
+      def initialize(text, console)
+        @text = text.to_s.freeze
         @console = console
       end
 
-      def content=(value)
-        @content = value.freeze
+      def text=(value)
+        @text = value.to_s.freeze
         @console.reprint_content(self)
         value
       end
 
-      def row_count
-        @content.each_line.count
+      def newline_count
+        @text.count("\n")
+      end
+
+      def last_line_length
+        if @text.empty? || @text.end_with?("\n")
+          0
+        else
+          # Remove CSI sequences so they don't count against the length of the line because
+          # they are invisible in the terminal
+          @text.lines.last.gsub(/\e\[\d+;\d+;\d+m/, "").length
+        end
       end
 
       def to_s
-        @content
+        @text
       end
     end
 
     class HostStatus
-      include TextRendering
-
       attr_accessor :row_number
 
       def initialize(host, console)
@@ -290,31 +339,35 @@ module Warg
         @console = console
 
         @hostname = host.address
-        @state = SGR("STARTING").with(text_color: :cyan)
+        @state = Console::SGR("STARTING").with(text_color: :cyan)
         @failure_message = ""
 
-        @console.print_content self
+        @console.puts self
       end
 
-      def row_count
-        1 + @failure_message.each_line.count
+      def newline_count
+        1 + @failure_message.count("\n")
+      end
+
+      def last_line_length
+        0
       end
 
       def started!
-        @state = SGR("RUNNING").with(text_color: :magenta)
+        @state = Console::SGR("RUNNING").with(text_color: :magenta)
 
         @console.reprint_content(self)
       end
 
       def failed!(failure_message = "")
-        @state = SGR("FAILED").with(text_color: :red, effect: :bold)
+        @state = Console::SGR("FAILED").with(text_color: :red, effect: :bold)
         @failure_message = failure_message.to_s
 
         @console.reprint_content(self)
       end
 
       def success!
-        @state = SGR("DONE").with(text_color: :green)
+        @state = Console::SGR("DONE").with(text_color: :green)
 
         @console.reprint_content(self)
       end
@@ -327,7 +380,7 @@ module Warg
             map { |line| line.prepend("    ") }.
             join
 
-          content << SGR(indented_failure_message).with(text_color: :yellow)
+          content << Console::SGR(indented_failure_message).with(text_color: :yellow)
         end
 
         content
@@ -398,9 +451,27 @@ module Warg
       end
 
       RESET = new
-    end
 
-    SGR = SelectGraphicRendition
+      class Renderer
+        def initialize(text)
+          @text = text
+          @select_graphic_rendition = SelectGraphicRendition.new
+        end
+
+        def with(**options)
+          @select_graphic_rendition = @select_graphic_rendition.modify(options)
+          self
+        end
+
+        def to_s
+          @select_graphic_rendition.(@text)
+        end
+
+        def to_str
+          to_s
+        end
+      end
+    end
   end
 
   class Localhost
@@ -740,8 +811,6 @@ module Warg
       attr_reader :started_at
       attr_reader :stderr
       attr_reader :stdout
-
-      include Console::TextRendering
 
       def initialize(host, command)
         @host = host
@@ -1477,8 +1546,6 @@ module Warg
     end
 
     module Behavior
-      include Console::TextRendering
-
       def self.included(klass)
         klass.extend(ClassMethods)
       end
@@ -1541,6 +1608,10 @@ module Warg
         others.inject(self) do |execution, other|
           execution | other
         end
+      end
+
+      def SGR(text)
+        Console::SGR(text)
       end
 
       private
