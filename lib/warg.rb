@@ -434,11 +434,21 @@ module Warg
       end
 
       def modify(**attrs)
-        self.class.new(to_h.merge(attrs))
+        combination = to_h.merge(attrs) do |key, old_value, new_value|
+          if old_value == "0"
+            new_value
+          elsif new_value == "0"
+            old_value
+          else
+            new_value
+          end
+        end
+
+        self.class.new(combination)
       end
 
       def |(other)
-        self.class.new(to_h.merge(other.to_h))
+        modify(other.to_h)
       end
 
       def to_str

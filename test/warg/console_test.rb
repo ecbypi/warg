@@ -40,4 +40,27 @@ class WargConsoleTest < Minitest::Test
 
     assert_equal "que tal\nque hizo?\nno me digas!\n\n", console.io.string
   end
+
+  def test_select_graphics_renditions_can_be_combined
+    cyan_text_color = Warg::Console::SelectGraphicRendition.new(text_color: :cyan)
+    strikethrough_effect = Warg::Console::SelectGraphicRendition.new(effect: :strikethrough)
+
+    combination = (cyan_text_color | strikethrough_effect).modify(background_color: :white)
+
+    assert_equal "\e[47;9;36m", combination.to_s
+    assert_equal combination.to_h, {
+      text_color: "36",
+      background_color: "47",
+      effect: "9"
+    }
+
+    other_combination = combination.modify(text_color: :magenta)
+
+    assert_equal "\e[47;9;35m", other_combination.to_s
+    assert_equal other_combination.to_h, {
+      text_color: "35",
+      background_color: "47",
+      effect: "9"
+    }
+  end
 end
