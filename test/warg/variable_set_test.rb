@@ -39,6 +39,19 @@ class WargVariableSetTest < Minitest::Test
     end
   end
 
+  def test_checking_for_defined_properties
+    config = Warg::Config.new
+    variable_set = Warg::Config::VariableSet.new("alrededor", config)
+
+    refute variable_set.defined?(:la_esquina)
+    refute variable_set.defined?("la_esquina")
+
+    variable_set.la_esquina = true
+
+    assert variable_set.defined?(:la_esquina)
+    assert variable_set.defined?("la_esquina")
+  end
+
   def test_context_is_a_protected_method
     config = Warg::Config.new
     variable_set = Warg::Config::VariableSet.new("supermercado", config)
