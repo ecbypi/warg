@@ -2,7 +2,7 @@ require "test_helper"
 
 class WargRunnerTest < Minitest::Test
   def test_loading_config_and_code_and_running_command
-    runner = Warg::Runner.new %w( uptime -h warg@warg-testing )
+    runner = Warg::Runner.new %w( uptime -t warg@warg-testing )
 
     stdout, _ = capture_io do
       runner.run
@@ -28,7 +28,7 @@ class WargRunnerTest < Minitest::Test
   end
 
   def test_prints_to_stderr_and_exits_when_command_isnt_found
-    runner = Warg::Runner.new %w( downtime -h localhost )
+    runner = Warg::Runner.new %w( downtime -t localhost )
 
     _, stderr = capture_io do
       begin
@@ -37,7 +37,7 @@ class WargRunnerTest < Minitest::Test
       end
     end
 
-    assert_equal %{Could not find command from ["downtime", "-h", "localhost"]\n}, stderr
+    assert_equal %{Could not find command from ["downtime", "-t", "localhost"]\n}, stderr
   end
 
   def test_autoloads_scripts_as_commands
@@ -47,7 +47,7 @@ class WargRunnerTest < Minitest::Test
       end
     end
 
-    runner = Warg::Runner.new %w( process-snapshot -h warg@nuba-nuba )
+    runner = Warg::Runner.new %w( process-snapshot -t warg@nuba-nuba )
     ProcessSnapshot.extend(Warg::Testing::CaptureStdout)
 
     stdout, _ = capture_io do

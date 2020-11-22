@@ -1243,7 +1243,7 @@ module Warg
       @argv = argv
       @parser = OptionParser.new
 
-      @parser.on("-h", "--hosts HOSTS", Array, "hosts to use") do |hosts_data|
+      @parser.on("-t", "--target HOSTS", Array, "hosts to use") do |hosts_data|
         hosts_data.each { |host_data| hosts.add(host_data) }
       end
 

@@ -18,7 +18,7 @@ class WargCommandTest < Minitest::Test
       end
     end
 
-    context = Warg::Context.new %w( top -u toby -h localhost )
+    context = Warg::Context.new %w( top -u toby -t localhost )
 
     top_command.(context)
 
