@@ -444,11 +444,11 @@ module Warg
           end
         end
 
-        self.class.new(combination)
+        self.class.new(**combination)
       end
 
       def |(other)
-        modify(other.to_h)
+        modify(**other.to_h)
       end
 
       def to_str
@@ -476,7 +476,7 @@ module Warg
         end
 
         def with(**options)
-          @select_graphic_rendition = @select_graphic_rendition.modify(options)
+          @select_graphic_rendition = @select_graphic_rendition.modify(**options)
           self
         end
 
