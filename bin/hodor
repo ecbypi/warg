@@ -2,9 +2,6 @@
 
 $:.unshift(File.expand_path(File.join("..", "..", "lib"), __FILE__))
 
-require "byebug"
-require "pry"
-
 require "warg"
 
 Warg::Runner.new(ARGV).run

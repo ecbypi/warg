@@ -1,6 +1,8 @@
 require "uri"
 require "optparse"
 require "pathname"
+require "forwardable"
+require "tempfile"
 require "digest/sha1"
 
 require "net/ssh"
