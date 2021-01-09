@@ -651,10 +651,18 @@ module Warg
 
     def matches?(filters)
       filters.all? do |name, value|
-        if respond_to?(name)
-          send(name) == value
+        host_value =
+          if respond_to?(name)
+            send(name)
+          else
+            @properties[name.to_s]
+          end
+
+        case value
+        when Array
+          value.include?(host_value)
         else
-          @properties[name.to_s] == value
+          host_value == value
         end
       end
     end
@@ -815,6 +823,21 @@ module Warg
       end
 
       @id = Digest::SHA1.hexdigest(@uri.to_s)
+    end
+
+    class Filter
+      def self.parse(filter)
+        new filter.split(":", 2)
+      end
+
+      def initialize(property, value)
+        @property = property
+        @value = value
+      end
+
+      def to_h
+        { @property => @value }
+      end
     end
 
     class CommandOutcome
@@ -1031,8 +1054,8 @@ module Warg
       self
     end
 
-    def with(**filters)
-      HostCollection.from(select { |host| host.matches?(**filters) })
+    def with(*filters)
+      HostCollection.from(select { |host| host.matches?(*filters) })
     end
 
     def ==(other)
@@ -1244,9 +1267,22 @@ module Warg
     def initialize(argv)
       @argv = argv
       @parser = OptionParser.new
+      @filters = {}
 
       @parser.on("-t", "--target HOSTS", Array, "hosts to use") do |hosts_data|
         hosts_data.each { |host_data| hosts.add(host_data) }
+      end
+
+      @parser.on("-f", "--filter FILTERS", Array, "filters to apply to hosts") do |filter|
+        property, value = filter.split(":", 2)
+        # NOTE: Is there a better separator for array values?
+        array_value = value.split(",")
+
+        if array_value.length > 1
+          @filters[property] = array_value
+        else
+          @filters[property] = value
+        end
       end
 
       super()
