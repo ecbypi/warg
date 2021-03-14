@@ -721,8 +721,8 @@ module Warg
       inspect.hash
     end
 
-    def run_command(command)
-      outcome = CommandOutcome.new(self, command)
+    def run_command(command, &setup)
+      outcome = CommandOutcome.new(self, command, &setup)
 
       connection.open_channel do |channel|
         channel.exec(command) do |_, success|
@@ -764,12 +764,12 @@ module Warg
       outcome
     end
 
-    def run_script(script)
+    def run_script(script, &setup)
       create_directory script.install_directory
 
       create_file_from script.content, path: script.install_path, mode: 0755
 
-      run_command(script.remote_path)
+      run_command(script.remote_path, &setup)
     end
 
     def create_directory(directory)
@@ -867,29 +867,46 @@ module Warg
       attr_reader :stderr
       attr_reader :stdout
 
-      def initialize(host, command)
+      def initialize(host, command, &setup)
         @host = host
         @command = command
 
         @console_status = Console::HostStatus.new(host, Warg.console)
 
         @stdout = ""
+        @stdout_callback = proc {}
+
         @stderr = ""
+        @stderr_callback = proc {}
 
         @started_at = nil
         @finished_at = nil
+
+        if setup
+          instance_eval(&setup)
+        end
       end
 
       def value
         self
       end
 
+      def on_stdout(&block)
+        @stdout_callback = block
+      end
+
       def collect_stdout(data)
         @stdout << data
+        @stdout_callback.call(data)
+      end
+
+      def on_stderr(&block)
+        @stderr_callback = block
       end
 
       def collect_stderr(data)
         @stderr << data
+        @stderr_callback.call(data)
       end
 
       def successful?
@@ -1117,15 +1134,15 @@ module Warg
       self
     end
 
-    def run_script(script, order: :parallel)
+    def run_script(script, order: :parallel, &setup)
       run(order: order) do |host, result|
-        result.update host.run_script(script)
+        result.update host.run_script(script, &setup)
       end
     end
 
-    def run_command(command, order: :parallel)
+    def run_command(command, order: :parallel, &setup)
       run(order: order) do |host, result|
-        result.update host.run_command(command)
+        result.update host.run_command(command, &setup)
       end
     end
 
@@ -1504,11 +1521,12 @@ module Warg
     end
 
     class Deferred
-      def initialize(command, run_object, hosts, order)
+      def initialize(command, run_object, hosts, order, &setup)
         @command = command
         @run_object = run_object
         @hosts = hosts
         @order = order
+        @setup = setup
 
         @callbacks_queue = CallbacksQueue.new(order)
 
@@ -1532,7 +1550,7 @@ module Warg
       end
 
       def run
-        execution_result = @hosts.public_send(@run_type, @run_object, order: @order)
+        execution_result = @hosts.public_send(@run_type, @run_object, order: @order, &@setup)
 
         execution_result = @callbacks_queue.drain(execution_result)
 
@@ -1856,15 +1874,15 @@ module Warg
       def configure_parser!
       end
 
-      def run_script(script_name = nil, on: hosts, order: :parallel)
+      def run_script(script_name = nil, on: hosts, order: :parallel, &setup)
         script_name ||= command_name.script
         script = Script.new(script_name, context)
 
-        append Executor::Deferred.new(self, script, on, order)
+        append Executor::Deferred.new(self, script, on, order, &setup)
       end
 
-      def run_command(command, on: hosts, order: :parallel)
-        append Executor::Deferred.new(self, command, on, order)
+      def run_command(command, on: hosts, order: :parallel, &setup)
+        append Executor::Deferred.new(self, command, on, order, &setup)
       end
 
       def on_localhost(banner, &block)
