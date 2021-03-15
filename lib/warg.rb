@@ -20,6 +20,38 @@ unless Hash.method_defined?(:transform_keys)
   end
 end
 
+unless Exception.method_defined?(:full_message)
+  class Exception
+    def full_message(highlight: true, order: :bottom)
+      trace = backtrace || [caller[0]]
+
+      trace_head = trace[0]
+      trace_tail = trace[1..-1] || []
+
+      output = "#{trace_head}: \e[1m#{message} (\e[1;4m#{self.class}\e[m\e[1m)\e[m"
+
+      case order.to_sym
+      when :top
+        unless trace_tail.empty?
+          output << "\n\t from #{trace_tail.join("\n\t from ")}"
+        end
+      when :bottom
+        trace_tail.each_with_index do |line, index|
+          output.prepend "\t#{index + 1}: from #{line}\n"
+        end
+
+        output.prepend "\e[1mTraceback\e[m (most recent call last):\n"
+      end
+
+      unless highlight
+        output.gsub!(/\e\[(\d+;)+m/, "")
+      end
+
+      output
+    end
+  end
+end
+
 module Warg
   class InvalidHostDataError < StandardError
     def initialize(host_data)

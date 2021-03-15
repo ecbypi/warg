@@ -124,9 +124,9 @@ module Warg
           end
         INIT
 
-        klass.attr_reader :cursor_position
-        klass.attr_reader :history
-        klass.attr_reader :io
+        klass.send :attr_reader, :cursor_position
+        klass.send :attr_reader, :history
+        klass.send :attr_reader, :io
       end
     end
 
