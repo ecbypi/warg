@@ -27,8 +27,6 @@ require "set"
 require "warg"
 
 console = Warg::Console.new
-$stdout = Warg::Console::IOProxy.new($stdout, console)
-$stderr = Warg::Console::IOProxy.new($stderr, console)
 
 ctpa_town = Warg::Host.from("randy@ctpa-town.com")
 sodo_sopa = Warg::Host.from("loo@sodo-sopa.com")

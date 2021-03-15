@@ -41,10 +41,11 @@ module Warg
     end
 
     def initialize
-      @io = $stdout
+      @io = $stderr
       @history = History.new
       @cursor_position = CursorPosition.new
-      @mutex = Mutex.new
+      @io_mutex = Mutex.new
+      @history_mutex = Mutex.new
     end
 
     def redirecting_stdout_and_stderr
@@ -79,20 +80,26 @@ module Warg
                   Content.new(text_or_content, self)
                 end
 
-      @mutex.synchronize do
+      @io_mutex.synchronize do
         @io.print content.to_s
 
-        @history.append(content, at: @cursor_position)
-        @cursor_position.adjust_to(content)
+        append_to_history(content)
 
         content
+      end
+    end
+
+    def append_to_history(content)
+      @history_mutex.synchronize do
+        @history.append(content, at: @cursor_position)
+        @cursor_position.adjust_to(content)
       end
     end
 
     # For CSI sequences, see:
     # https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_output_sequences
     def reprint_content(content)
-      @mutex.lock
+      @io_mutex.lock
 
       history_entry = @history.find_entry_for(content)
 
@@ -152,11 +159,15 @@ module Warg
       # reset `newline_count` and `last_line_length` to what they now are in `@content`
       history_entry.sync!
 
-      @mutex.unlock
+      @io_mutex.unlock
     end
 
     class IOProxy < SimpleDelegator
       def initialize(io, console)
+        if io.is_a? IOProxy
+          raise ArgumentError, "cannot nest `IOProxy' instances"
+        end
+
         @io = io
         @console = console
         __setobj__ @io
@@ -164,7 +175,9 @@ module Warg
 
       def print(*texts)
         texts.each do |text|
-          @console.print(text.to_s)
+          @io.print text
+
+          append_to_console_history text
         end
 
         nil
@@ -172,7 +185,13 @@ module Warg
 
       def puts(*texts)
         texts.each do |text|
-          @console.puts(text.to_s)
+          @io.puts text
+
+          append_to_console_history text
+
+          unless text.to_s.end_with?("\n")
+            append_to_console_history "\n"
+          end
         end
 
         nil
@@ -180,10 +199,19 @@ module Warg
 
       def write(*texts)
         texts.inject(0) do |count, text|
-          @console.print(text.to_s)
+          @io.print text
+
+          append_to_console_history(text)
 
           count + text.to_s.length
         end
+      end
+
+      private
+
+      def append_to_console_history(text)
+        content = Content.new(text, @console)
+        @console.append_to_history(content)
       end
     end
 
