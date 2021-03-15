@@ -30,8 +30,10 @@ blocks:
 
             - sem-version ruby $RUBY_VERSION
 
+            - bundle config set path vendor/bundle
+
             - cache restore gems-$RUBY_VERSION-$SEMAPHORE_GIT_BRANCH-$(checksum warg.gemspec),gems-$RUBY_VERSION-$SEMAPHORE_GIT_BRANCH-,gems-$RUBY_VERSION-main-
-            - bundle install --path vendor/bundle --jobs 4 --retry 3
+            - bundle install --jobs 4 --retry 3
             - cache store gems-$RUBY_VERSION-$SEMAPHORE_GIT_BRANCH-$(checksum warg.gemspec) vendor/bundle
 
             - bundle exec m -r test
