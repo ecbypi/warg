@@ -236,6 +236,10 @@ module Warg
 
         @row += newline_count
       end
+
+      def inspect
+        %{#<#{self.class.name} row=#{row} column=#{column}>}
+      end
     end
 
     class History
@@ -262,6 +266,10 @@ module Warg
         current_entry
       end
 
+      def inspect
+        %{#<#{self.class.name} head=#{@head}>}
+      end
+
       class FirstEntry
         attr_reader :content
         attr_accessor :next_entry
@@ -285,6 +293,10 @@ module Warg
 
         def to_s
           ""
+        end
+
+        def inspect
+          %{#<#{self.class.name}>}
         end
       end
 
@@ -334,6 +346,10 @@ module Warg
         def to_s
           @text.dup
         end
+
+        def inspect
+          %{#<#{self.class.name} row_number=#{row_number} column_number=#{column_number} content=#{content.inspect}>}
+        end
       end
     end
 
@@ -365,6 +381,10 @@ module Warg
 
       def to_s
         @text
+      end
+
+      def inspect
+        %{#<#{self.class.name} newline_count=#{newline_count} last_line_length=#{last_line_length} text=#{@text.inspect}>}
       end
     end
 
