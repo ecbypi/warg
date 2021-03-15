@@ -73,6 +73,11 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision :ansible_local do |ansible|
     ansible.compatibility_mode = "2.0"
+    # FIXME: Figure out if `ansible_user` can be set by default like it was in earlier versions
+    # of ansible
+    #
+    # See also `.semaphore/semaphore.yml`
+    ansible.extra_vars = { ansible_user: "vagrant" }
     ansible.playbook = "test/ci-playbook.yml"
   end
 end

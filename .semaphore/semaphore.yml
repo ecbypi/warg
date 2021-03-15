@@ -25,7 +25,11 @@ blocks:
           commands:
             - checkout
 
-            - ansible-playbook test/ci-playbook.yml
+            # FIXME: Figure out if `ansible_user` can be set by default like it was in earlier
+            # versions of ansible
+            #
+            # See also `Vagrantfile`
+            - ansible-playbook test/ci-playbook.yml -e ansible_user=$USER
 
             - sem-version ruby $RUBY_VERSION
 
