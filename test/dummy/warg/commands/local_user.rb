@@ -1,7 +1,7 @@
 class LocalUser
   include Warg::Command::Behavior
 
-  def run
+  def setup
     on_localhost "whoami" do
       context.variables(:locally) do |locally|
         locally.user = `whoami`.chomp

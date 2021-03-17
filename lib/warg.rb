@@ -1426,13 +1426,7 @@ module Warg
         @insert_at = 1
 
         until @playing_at >= @items.length
-          command = @items[@playing_at]
-
-          Warg.console.puts Console::SGR("[#{command.name}]").with(text_color: :blue, effect: :bold)
-          command.steps.each do |deferred|
-            Warg.console.puts Console::SGR(" -> #{deferred.banner}").with(text_color: :magenta)
-            deferred.run
-          end
+          @items[@playing_at].run
 
           @playing_at += 1
           @insert_at = @playing_at + 1
@@ -1547,7 +1541,7 @@ module Warg
                 object = Class.new do
                   include Command::BehaviorWithoutRegistration
 
-                  def run
+                  def setup
                     run_script
                   end
                 end
@@ -1844,6 +1838,10 @@ module Warg
         @cli = @script.tr("/", ":")
       end
 
+      def console
+        "[#{cli}]"
+      end
+
       def registry
         @cli
       end
@@ -1963,12 +1961,20 @@ module Warg
       end
 
       def call
-        run
+        setup
         self
       end
 
+      def setup
+      end
+
       def run
-        $stderr.puts "[WARN] `#{name}' did not define `#run' and does nothing"
+        Warg.console.puts Console::SGR(command_name.console).with(text_color: :blue, effect: :bold)
+
+        @steps.each do |deferred|
+          Warg.console.puts Console::SGR(" -> #{deferred.banner}").with(text_color: :magenta)
+          deferred.run
+        end
       end
 
       def command_name

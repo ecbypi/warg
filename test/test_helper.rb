@@ -93,10 +93,10 @@ module Warg
     module CaptureStdout
       def self.extended(klass)
         klass.class_eval <<-RUN
-          alias_method :default_run, :run
+          alias_method :default_setup, :setup
 
-          def run
-            default_run.and_then do |host, outcome, resolver|
+          def setup
+            default_setup.and_then do |host, outcome, resolver|
               $stdout.puts outcome.stdout
               $stderr.puts outcome.stderr
             end
