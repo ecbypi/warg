@@ -1357,7 +1357,7 @@ module Warg
               if block.nil?
                 value = instance_variable_get(:@#{@name})
 
-                if value.respond_to?(:call)
+                if value.respond_to?(:to_proc)
                   instance_eval(&value)
                 else
                   value
