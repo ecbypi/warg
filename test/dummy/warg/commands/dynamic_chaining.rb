@@ -1,7 +1,7 @@
 class DynamicChaining
   include Warg::Command::Behavior
 
-  def run
+  def setup
     locally "chain commands" do
       chain LocalUser
     end

@@ -1,5 +1,5 @@
 class WhoWeAre < Warg::Command
-  def run
+  def setup
     locally "local step" do
       context.variables(:log_test) do |log_test|
         log_test.local_user = `whoami`.chomp

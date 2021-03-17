@@ -1,5 +1,5 @@
 class Broken < Warg::Command
-  def run
+  def setup
     context.variables(:locally) do |locally|
       locally.failed = false
     end

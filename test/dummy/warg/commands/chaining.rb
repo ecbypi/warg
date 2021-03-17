@@ -8,19 +8,19 @@ module Chaining
   end
 
   class First < Warg::Command
-    def run
+    def setup
       context.chain_example.deposits << "first"
     end
   end
 
   class Second < Warg::Command
-    def run
+    def setup
       context.chain_example.deposits << "second"
     end
   end
 
   class Third < Warg::Command
-    def run
+    def setup
       chain First, Second
       context.chain_example.deposits << "third"
     end
