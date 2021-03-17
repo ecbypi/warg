@@ -43,6 +43,7 @@ module Warg
     end
 
     def reset!
+      Warg.console.output.clear
       Warg.instance_variable_set(:@config, Config.new)
 
       Command.registry.each do |name, command|
@@ -131,6 +132,20 @@ module Warg
     end
 
     Console.extend ConsoleRedirection
+  end
+
+  class Runner
+    attr_reader :context
+  end
+
+  module Command::BehaviorWithoutRegistration
+    def on_failure(execution_result)
+      failure_reason = execution_result.map do |outcome|
+        outcome.failure_reason
+      end.join("\n")
+
+      fail "`#{name}' failed because #{failure_reason}"
+    end
   end
 end
 
