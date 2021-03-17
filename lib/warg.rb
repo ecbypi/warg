@@ -1377,21 +1377,18 @@ module Warg
   class Context < Config
     attr_reader :argv
     attr_reader :parser
+    attr_reader :playlist
 
     def initialize(argv)
       @argv = argv
       @parser = OptionParser.new
-      @operations = Hash.new { |lists, command| lists[command] = [] }
+      @playlist = Playlist.new
 
       @parser.on("-t", "--target HOSTS", Array, "hosts to use") do |hosts_data|
         hosts_data.each { |host_data| hosts.add(host_data) }
       end
 
       super()
-    end
-
-    def append_operation!(command, deferred)
-      @operations[command] << deferred
     end
 
     def parse_options!
@@ -1401,15 +1398,7 @@ module Warg
     def run!
       Console.hostname_width = hosts.map { |host| host.address.length }.max
 
-      @operations.each do |command, operations|
-        Warg.console.puts Console::SGR("[#{command.name}]").with(text_color: :blue, effect: :bold)
-
-        operations.each do |operation|
-          Warg.console.puts Console::SGR(" -> #{operation.banner}").with(text_color: :magenta)
-
-          operation.run
-        end
-      end
+      @playlist.start
     end
 
     def copy(config)
@@ -1421,6 +1410,38 @@ module Warg
         variables(variables_name) do |variables_object|
           variables_object.copy config.instance_variable_get("@#{variables_name}")
         end
+      end
+    end
+
+    class Playlist
+      def initialize
+        @playing_at = 0
+        @insert_at = 0
+        @items = []
+        @started = false
+      end
+
+      def start
+        @started = true
+        @insert_at = 1
+
+        until @playing_at >= @items.length
+          command = @items[@playing_at]
+
+          Warg.console.puts Console::SGR("[#{command.name}]").with(text_color: :blue, effect: :bold)
+          command.steps.each do |deferred|
+            Warg.console.puts Console::SGR(" -> #{deferred.banner}").with(text_color: :magenta)
+            deferred.run
+          end
+
+          @playing_at += 1
+          @insert_at = @playing_at + 1
+        end
+      end
+
+      def add(command)
+        @items.insert(@insert_at, command)
+        @insert_at += 1
       end
     end
   end
@@ -1881,6 +1902,25 @@ module Warg
       end
     end
 
+    class Playlist
+      def initialize
+        @at = 0
+        @items = []
+      end
+
+      def start
+        @at = 0
+
+        until @at >= @items.length
+          @items[@at].run
+        end
+      end
+
+      def add(deferred)
+        @items << deferred
+      end
+    end
+
     module BehaviorWithoutRegistration
       def self.included(klass)
         klass.extend(ClassMethods)
@@ -1903,6 +1943,7 @@ module Warg
       attr_reader :hosts
       attr_reader :operations
       attr_reader :parser
+      attr_reader :steps
 
       def initialize(context)
         @context = context
@@ -1912,6 +1953,9 @@ module Warg
         @argv = @context.argv.dup
 
         configure_parser!
+
+        @context.playlist.add(self)
+        @steps = []
       end
 
       def name
@@ -1971,7 +2015,7 @@ module Warg
       alias locally on_localhost
 
       def append(deferred)
-        @context.append_operation!(self, deferred)
+        @steps << deferred
         deferred
       end
     end
