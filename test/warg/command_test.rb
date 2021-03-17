@@ -169,4 +169,43 @@ class WargCommandTest < Minitest::Test
     assert_includes Warg.console.output, "whoami"
     assert_includes Warg.console.output, "warg-testing"
   end
+
+  def test_chaining_commands_dynamically
+    chain_dynamically_command = Class.new do
+      include Warg::Command::BehaviorWithoutRegistration
+      @command_name = Warg::Command::Name.new(script_name: "dynamic-chaining")
+
+      def run
+        locally "chain commands" do
+          chain context.other_commands.no_op
+        end
+      end
+    end
+
+    no_op_command = Class.new do
+      include Warg::Command::BehaviorWithoutRegistration
+      @command_name = Warg::Command::Name.new(script_name: "no-op")
+
+      def run
+        locally "vacio" do
+        end
+      end
+    end
+
+    context = Warg::Context.new %w( dynamic-chaining )
+    context.variables(:other_commands) do |other_commands|
+      other_commands.no_op = no_op_command
+    end
+
+    chain_dynamically_command.(context)
+    context.run!
+
+    assert_includes Warg.console.output, "dynamic-chaining"
+
+    assert_includes Warg.console.output, "chain commands"
+    assert_includes Warg.console.output, "localhost"
+
+    assert_includes Warg.console.output, "no-op"
+    assert_includes Warg.console.output, "vacio"
+  end
 end
