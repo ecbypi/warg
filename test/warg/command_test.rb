@@ -2,161 +2,56 @@ require "test_helper"
 
 class WargCommandTest < Minitest::Test
   def test_defining_parser_options
-    top_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "top")
+    # See dummy/commands/top.rb
+    runner = Warg::Runner.new %w( top -u toby -t localhost )
+    runner.run
 
-      def run
-      end
-
-      def configure_parser!
-        parser.on("-u USER", "user to filter processes for") do |user|
-          context.variables(:top) do |top|
-            top.user = user
-          end
-        end
-      end
-    end
-
-    context = Warg::Context.new %w( top -u toby -t localhost )
-
-    top_command.(context)
-    context.parse_options!
+    context = runner.context
 
     assert_equal "toby", context.top.user
     assert_equal ["ssh://localhost"], context.hosts.map(&:to_s)
   end
 
   def test_chaining_commands
-    first_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "first")
+    # See dummy/commands/chaining.rb
+    runner = Warg::Runner.new %w( chaining )
 
-      def run
-        context.chain_example.deposits << "first"
-      end
-    end
-
-    second_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "second")
-
-      def run
-        context.chain_example.deposits << "second"
-      end
-    end
-
-    third_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "third")
-
-      def run
-        # NOTE: `chain_example.other_commands` is only necessary because we can't access
-        # `first_command` and `second_command` in the `run` method
-        chain(*context.chain_example.other_commands)
-
-        context.chain_example.deposits << "third"
-      end
-    end
-
-    combined_command = first_command | second_command | first_command
-
-    context = Warg::Context.new([])
+    context = runner.context
     context.variables(:chain_example) do |chain_example|
       chain_example.deposits = []
-      chain_example.other_commands = [first_command, second_command]
     end
 
-    _ = first_command.(context) | second_command
+    runner.run
 
-    assert_equal %w( first second ), context.chain_example.deposits
-
-    combined_command.(context)
-
-    assert_equal %w( first second first second first ), context.chain_example.deposits
-
-    third_command.(context)
-
+    # See `Chaining#call`
     assert_equal %w( first second first second first first second third ), context.chain_example.deposits
   end
 
   def test_reporting_steps_run_locally
-    localhost_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "local-user")
+    # See dummy/commands/local_user.rb
+    runner = Warg::Runner.new %w( local-user )
+    runner.run
 
-      def run
-        on_localhost "whoami" do
-          context.variables(:locally) do |locally|
-            locally.user = `whoami`.chomp
-          end
-        end
-      end
-    end
-
-    context = Warg::Context.new %w( local-user )
-    localhost_command.(context)
-    context.run!
-
-    assert_equal ENV["USER"], context.locally.user
+    assert_equal ENV["USER"], runner.context.locally.user
   end
 
   def test_capturing_errors_in_code_run_locally
-    localhost_broken_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "broke")
+    # See dummy/commands/broken.rb
+    runner = Warg::Runner.new %w( broken )
+    runner.run
 
-      def run
-        context.variables(:locally) do |locally|
-          locally.failed = false
-        end
-
-        on_localhost "whoami" do
-          raise "nothing here"
-        end
-      end
-
-      def on_failure(execution_result)
-        outcome = execution_result.value[0]
-
-        context.variables(:locally) do |locally|
-          locally.failure = outcome.error
-        end
-      end
-    end
-
-    context = Warg::Context.new %w( broke )
-    localhost_broken_command.(context)
-    context.run!
+    context = runner.context
 
     assert_kind_of RuntimeError, context.locally.failure
     assert_equal "nothing here", context.locally.failure.message
   end
 
   def test_logs_progress_to_console
-    log_test_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "who-we-are")
+    # See dummy/commands/who_we_are.rb
+    runner = Warg::Runner.new %w( who-we-are )
+    runner.run
 
-      def run
-        locally "local step" do
-          context.variables(:log_test) do |log_test|
-            log_test.local_user = `whoami`.chomp
-          end
-        end
-
-        whoami = run_command "whoami", on: Warg::HostCollection.from(["warg-testing"])
-        whoami.and_then do |host, result|
-          context.variables(:log_test) do |log_test|
-            log_test.remote_user = result.stdout.chomp
-          end
-        end
-      end
-    end
-
-    context = Warg::Context.new %w( who-we-are )
-    log_test_command.(context)
-    context.run!
+    context = runner.context
 
     assert_equal ENV["USER"], context.log_test.local_user
     assert_equal "warg", context.log_test.remote_user
@@ -171,41 +66,16 @@ class WargCommandTest < Minitest::Test
   end
 
   def test_chaining_commands_dynamically
-    chain_dynamically_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "dynamic-chaining")
+    # See dummy/commands/dynamic_chaining.rb
+    runner = Warg::Runner.new %w( dynamic-chaining )
+    runner.run
 
-      def run
-        locally "chain commands" do
-          chain context.other_commands.no_op
-        end
-      end
-    end
+    local_user_index = Warg.console.output.index("local-user")
+    who_we_are_index = Warg.console.output.index("who-we-are")
 
-    no_op_command = Class.new do
-      include Warg::Command::BehaviorWithoutRegistration
-      @command_name = Warg::Command::Name.new(script_name: "no-op")
+    assert local_user_index
+    assert who_we_are_index
 
-      def run
-        locally "vacio" do
-        end
-      end
-    end
-
-    context = Warg::Context.new %w( dynamic-chaining )
-    context.variables(:other_commands) do |other_commands|
-      other_commands.no_op = no_op_command
-    end
-
-    chain_dynamically_command.(context)
-    context.run!
-
-    assert_includes Warg.console.output, "dynamic-chaining"
-
-    assert_includes Warg.console.output, "chain commands"
-    assert_includes Warg.console.output, "localhost"
-
-    assert_includes Warg.console.output, "no-op"
-    assert_includes Warg.console.output, "vacio"
+    assert local_user_index < who_we_are_index
   end
 end
